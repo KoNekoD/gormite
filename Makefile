@@ -16,3 +16,17 @@ git_tag_increment_minor_version:
 			git push origin "$$NEW_TAG"; \
 			echo "Tag '$$NEW_TAG' successfully created and pushed."; \
 	fi
+
+init_docs:
+	make down
+	make up_with_build
+	docker exec -it docs-web yarn install
+
+up: 
+	docker compose up -d
+
+up_with_build:
+	docker compose up -d --build
+
+down:
+	docker compose down --remove-orphans

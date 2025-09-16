@@ -1,0 +1,36 @@
+# Usage
+
+The gormite cli needs to generate migrations sql instead of writting it yourself, but it's not migration tool <br />
+Gormite uses one of [supported tools](/docs/cli#supported-tools)
+
+## Supported tools:
+
+1. [Goose](https://github.com/pressly/goose)
+2. [Migrate](https://pkg.go.dev/github.com/golang-migrate/migrate/v4)
+
+## Prequirements
+
+Create `gormite.yaml` where your heart desires <br />
+Paste this code here:
+
+```yaml copy filename="gormite.yaml"
+gormite:
+  orm:
+    mapping:
+      Entities:
+        dir: pkg/entities
+```
+
+## Usage
+
+```bash copy
+gormite -t {goose, migrate} --dsn {DATABASE_URL} --config-path {your/path/to/config}
+```
+
+## Cli flags:
+
+| Flag          | Description                            | Aliases     | Required | Default value          |
+| ------------- | -------------------------------------- | ----------- | -------- | ---------------------- |
+| --tool        | Migration tool (backend)               | -t -m -mt   | true     | None                   |
+| --dsn         | Database connection url, needs to calc | -d -db      | true     | None                   |
+| --config-path | Path to your gormite.yaml config       | -c --config | false    | resources/gormite.yaml |
