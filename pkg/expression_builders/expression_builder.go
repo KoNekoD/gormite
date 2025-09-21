@@ -19,30 +19,30 @@ const (
 
 // And - Creates a conjunction of the given expressions.
 func (b *ExpressionBuilder) And(expr ...string) *dtos.CompositeExpression {
-	expressionsComposite := make([]*dtos.CompositeExpressionOrString, len(expr))
+	expressionsComposite := make([]*dtos.Expr, len(expr))
 	for i, e := range expr {
-		expressionsComposite[i] = &dtos.CompositeExpressionOrString{String: &e}
+		expressionsComposite[i] = &dtos.Expr{Str: &e}
 	}
 
 	return dtos.NewAndCompositeExpression(expressionsComposite...)
 }
 
 // AndComposite - Creates a conjunction of the given expressions.
-func (b *ExpressionBuilder) AndComposite(expr ...*dtos.CompositeExpressionOrString) *dtos.CompositeExpression {
+func (b *ExpressionBuilder) AndComposite(expr ...*dtos.Expr) *dtos.CompositeExpression {
 	return dtos.NewAndCompositeExpression(expr...)
 }
 
 // Or - Creates a disjunction of the given expressions.
 func (b *ExpressionBuilder) Or(expr ...string) *dtos.CompositeExpression {
-	expressionsComposite := make([]*dtos.CompositeExpressionOrString, len(expr))
+	expressionsComposite := make([]*dtos.Expr, len(expr))
 	for i, e := range expr {
-		expressionsComposite[i] = &dtos.CompositeExpressionOrString{String: &e}
+		expressionsComposite[i] = &dtos.Expr{Str: &e}
 	}
 
 	return dtos.NewOrCompositeExpression(expressionsComposite...)
 }
 
-func (b *ExpressionBuilder) OrComposite(expr ...*dtos.CompositeExpressionOrString) *dtos.CompositeExpression {
+func (b *ExpressionBuilder) OrComposite(expr ...*dtos.Expr) *dtos.CompositeExpression {
 	return dtos.NewOrCompositeExpression(expr...)
 }
 

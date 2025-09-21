@@ -5,17 +5,14 @@ import (
 )
 
 type Union struct {
-	Query     *QueryBuilderOrString
+	Query     *UnionQb
 	UnionType *enums.UnionType
 }
 
-func NewUnion(query *QueryBuilderOrString) *Union {
+func NewUnion(query *UnionQb) *Union {
 	return &Union{Query: query}
 }
 
-func NewUnionWithType(
-	query *QueryBuilderOrString,
-	unionType enums.UnionType,
-) *Union {
+func NewUnionWithType(query *UnionQb, unionType enums.UnionType) *Union {
 	return &Union{Query: query, UnionType: &unionType}
 }

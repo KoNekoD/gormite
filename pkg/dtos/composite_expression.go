@@ -2,70 +2,70 @@ package dtos
 
 import "strings"
 
-type CompositeExpressionType string
+type ExprType string
 
 const (
 	// CompositeExpressionTypeAnd - Constant that represents an AND composite expression.
-	CompositeExpressionTypeAnd CompositeExpressionType = "AND"
+	CompositeExpressionTypeAnd ExprType = "AND"
 
 	// CompositeExpressionTypeOr - Constant that represents an OR composite expression.
-	CompositeExpressionTypeOr CompositeExpressionType = "OR"
+	CompositeExpressionTypeOr ExprType = "OR"
 )
 
-type CompositeExpressionOrString struct {
-	CompositeExpression *CompositeExpression
-	String              *string
+// Expr expression is responsible to build a single expression, it can be a string or a composite expression
+type Expr struct {
+	Expr *CompositeExpression
+	Str  *string
 }
 
-func (c *CompositeExpressionOrString) ToString() string {
-	if c.CompositeExpression != nil {
-		return c.CompositeExpression.ToString()
+func (c *Expr) ToString() string {
+	if c.Expr != nil {
+		return c.Expr.ToString()
 	}
 
-	return *c.String
+	return *c.Str
 }
 
-func (c *CompositeExpressionOrString) Clone() *CompositeExpressionOrString {
+func (c *Expr) Clone() *Expr {
 	cloned := *c
 
-	if c.String != nil {
-		str := *c.String
-		cloned.String = &str
+	if c.Str != nil {
+		str := *c.Str
+		cloned.Str = &str
 	}
 
-	if c.CompositeExpression != nil {
-		cloned.CompositeExpression = c.CompositeExpression.Clone()
+	if c.Expr != nil {
+		cloned.Expr = c.Expr.Clone()
 	}
 
 	return &cloned
 }
 
-// CompositeExpression - Composite expression is responsible to build a group of similar expression.
-// This class is immutable.
+// CompositeExpression composite expression is responsible to build a group of similar expression
 type CompositeExpression struct {
 	exprType string
 	// parts - Each expression part of the composite expression.
-	parts []*CompositeExpressionOrString
+	parts []*Expr
 }
 
 // NewCompositeExpression - Use the NewAndCompositeExpression() / NewOrCompositeExpression() factory methods.
 func NewCompositeExpression(
-	expressionType CompositeExpressionType,
-	parts ...*CompositeExpressionOrString,
+	expressionType ExprType,
+	parts ...*Expr,
 ) *CompositeExpression {
 	return &CompositeExpression{exprType: string(expressionType), parts: parts}
 }
 
-func NewAndCompositeExpression(parts ...*CompositeExpressionOrString) *CompositeExpression {
+func NewAndCompositeExpression(parts ...*Expr) *CompositeExpression {
 	return NewCompositeExpression(CompositeExpressionTypeAnd, parts...)
 }
 
-func NewOrCompositeExpression(parts ...*CompositeExpressionOrString) *CompositeExpression {
+func NewOrCompositeExpression(parts ...*Expr) *CompositeExpression {
 	return NewCompositeExpression(CompositeExpressionTypeOr, parts...)
 }
 
 // With - Returns a new CompositeExpression with the given parts added.
-func (c *CompositeExpression) With(parts ...*CompositeExpressionOrString) *CompositeExpression {
+func (c *CompositeExpression) With(parts ...*Expr) *CompositeExpression {
 	that := c.Clone()
 
 	that.parts = append(that.parts, parts...)
@@ -100,7 +100,7 @@ func (c *CompositeExpression) GetType() string {
 func (c *CompositeExpression) Clone() *CompositeExpression {
 	cloned := *c
 
-	cloned.parts = make([]*CompositeExpressionOrString, len(c.parts))
+	cloned.parts = make([]*Expr, len(c.parts))
 	for i, part := range c.parts {
 		cloned.parts[i] = part.Clone()
 	}
