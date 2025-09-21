@@ -1,14 +1,14 @@
 package postgres_schema_manager
 
 import (
+	"context"
 	"fmt"
 	"github.com/KoNekoD/gormite/pkg/assets"
 	"github.com/KoNekoD/gormite/pkg/dtos"
 	"github.com/KoNekoD/gormite/pkg/platforms"
 	"github.com/KoNekoD/gormite/pkg/schema_managers/abstract_schema_managers"
 	"github.com/KoNekoD/gormite/pkg/types"
-	"github.com/KoNekoD/ptrs/pkg/ptrs"
-	"github.com/KoNekoD/smt/pkg/smt"
+	"github.com/pkg/errors"
 	"regexp"
 	"slices"
 	"strconv"
@@ -40,60 +40,77 @@ type ListSchemaNamesDto struct {
 	SchemaName string `db:"schema_name"`
 }
 
-func (m *PostgreSQLSchemaManager) ListSchemaNames() []string {
-	typedData := make([]ListSchemaNamesDto, 0)
+func (m *PostgreSQLSchemaManager) ListSchemaNames(ctx context.Context) ([]string, error) {
+	items := make([]ListSchemaNamesDto, 0)
 
-	return smt.MapSlice(
-		platforms.Fetch(
-			m.Connection,
-			`
+	sql := `
 SELECT schema_name
 FROM   information_schema.schemata
 WHERE  schema_name NOT LIKE 'pg\_%'
 AND    schema_name != 'information_schema'
-`,
-			typedData,
-		), func(t ListSchemaNamesDto) string {
-			return t.SchemaName
-		},
-	)
-}
+`
 
-func (m *PostgreSQLSchemaManager) CreateSchemaConfig() *dtos.SchemaConfig {
-	config := m.AbstractSchemaManager.CreateSchemaConfig()
+	err := platforms.FetchScan(ctx, m.Connection, sql, &items)
 
-	config.SetName(m.getCurrentSchema())
-
-	return config
-}
-
-func (m *PostgreSQLSchemaManager) getCurrentSchema() *string {
-	if m.currentSchema == nil {
-		m.currentSchema = m.determineCurrentSchema()
+	if err != nil {
+		return nil, errors.Wrap(err, "error when listing schema names")
 	}
 
-	return m.currentSchema
+	result := make([]string, len(items))
+	for i, item := range items {
+		result[i] = item.SchemaName
+	}
+
+	return result, nil
+}
+
+func (m *PostgreSQLSchemaManager) CreateSchemaConfig(ctx context.Context) (*dtos.SchemaConfig, error) {
+	config := m.AbstractSchemaManager.CreateSchemaConfig()
+
+	schemaName, err := m.getCurrentSchema(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when getting current schema")
+	}
+
+	config.SetName(schemaName)
+
+	return config, nil
+}
+
+func (m *PostgreSQLSchemaManager) getCurrentSchema(ctx context.Context) (*string, error) {
+	if m.currentSchema == nil {
+		var err error
+		m.currentSchema, err = m.determineCurrentSchema(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "error when getting current schema")
+		}
+	}
+
+	return m.currentSchema, nil
 }
 
 type determineCurrentSchemaDto struct {
 	SchemaName string `db:"schema_name"`
 }
 
-func (m *PostgreSQLSchemaManager) determineCurrentSchema() *string {
-	dto := platforms.Fetch(
-		m.Connection,
-		`SELECT current_schema() AS schema_name`,
-		determineCurrentSchemaDto{},
-	)
-
-	if dto.SchemaName == "" {
-		return nil
+func (m *PostgreSQLSchemaManager) determineCurrentSchema(ctx context.Context) (*string, error) {
+	var dto determineCurrentSchemaDto
+	sql := `SELECT current_schema() AS schema_name`
+	err := platforms.FetchScan(ctx, m.Connection, sql, &dto)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when determining current schema")
 	}
 
-	return &dto.SchemaName
+	if dto.SchemaName == "" {
+		return nil, nil
+	}
+
+	return &dto.SchemaName, nil
 }
 
-func (m *PostgreSQLSchemaManager) GetPortableTableForeignKeyDefinition(tableForeignKey *dtos.SelectForeignKeyColumnsDto) *assets.ForeignKeyConstraint {
+func (m *PostgreSQLSchemaManager) GetPortableTableForeignKeyDefinition(
+	tableForeignKey *dtos.SelectForeignKeyColumnsDto,
+) *assets.ForeignKeyConstraint {
 	var onUpdate, onDelete *string
 
 	onUpdateRegex := regexp.MustCompile(`ON UPDATE ([a-zA-Z0-9]+( (NULL|ACTION|DEFAULT))?)`)
@@ -166,7 +183,7 @@ func (m *PostgreSQLSchemaManager) GetPortableTableColumnDefinition(tableColumn *
 		matches := regexp.MustCompile(`\((\d*)\)`).FindStringSubmatch(tableColumn.CompleteType)
 		if len(matches) == 2 {
 			lenInt, _ := strconv.Atoi(matches[1])
-			length = ptrs.AsPtr(lenInt)
+			length = &lenInt
 		}
 	}
 
@@ -184,10 +201,6 @@ func (m *PostgreSQLSchemaManager) GetPortableTableColumnDefinition(tableColumn *
 			tableColumn.Default = nil
 		}
 	}
-
-	//if length != nil &&  *length == -1 && nil != tableColumn.atttypmod {
-	//	length = tableColumn.atttypmod
-	//}
 
 	if length != nil && *length <= 0 {
 		length = nil
@@ -213,12 +226,6 @@ func (m *PostgreSQLSchemaManager) GetPortableTableColumnDefinition(tableColumn *
 		length = nil
 
 	case "bool", "boolean":
-		if tableColumn.Default != nil && *tableColumn.Default == "true" {
-			tableColumn.Default = ptrs.AsPtr(`true`)
-		}
-		if tableColumn.Default != nil && *tableColumn.Default == "false" {
-			tableColumn.Default = ptrs.AsPtr(`false`)
-		}
 		length = nil
 	case "json", "text", "_varchar", "varchar":
 		tableColumn.Default = m.parseDefaultExpression(tableColumn.Default)
@@ -230,21 +237,22 @@ func (m *PostgreSQLSchemaManager) GetPortableTableColumnDefinition(tableColumn *
 
 		if len(matches) > 2 {
 			precisionInt, _ := strconv.Atoi(matches[2])
-			precision = ptrs.AsPtr(precisionInt)
+			precision = &precisionInt
 			scaleInt, _ := strconv.Atoi(matches[3])
-			scale = ptrs.AsPtr(scaleInt)
+			scale = &scaleInt
 			length = nil
 		}
 	case "year":
 		length = nil
 	case "jsonb":
-		jsonb = ptrs.AsPtr(true)
+		jsonbTmp := true
+		jsonb = &jsonbTmp
 	}
 
 	if tableColumn.Default != nil {
 		re := regexp.MustCompile(`'([^']+)'::`)
 		if matches = re.FindStringSubmatch(*tableColumn.Default); len(matches) == 2 {
-			tableColumn.Default = ptrs.AsPtr(matches[1])
+			tableColumn.Default = &matches[1]
 		}
 	}
 
@@ -256,10 +264,7 @@ func (m *PostgreSQLSchemaManager) GetPortableTableColumnDefinition(tableColumn *
 	}
 
 	if tableColumn.Default != nil {
-		options = append(
-			options,
-			assets.WithColumnDefault(*tableColumn.Default),
-		)
+		options = append(options, assets.WithColumnDefault(*tableColumn.Default))
 	}
 
 	options = append(options, assets.WithColumnPrecision(precision))
@@ -275,17 +280,10 @@ func (m *PostgreSQLSchemaManager) GetPortableTableColumnDefinition(tableColumn *
 	}
 
 	if tableColumn.Comment != nil {
-		options = append(
-			options,
-			assets.WithColumnComment(*tableColumn.Comment),
-		)
+		options = append(options, assets.WithColumnComment(*tableColumn.Comment))
 	}
 
-	column := assets.NewColumn(
-		tableColumn.Field,
-		types.GetType(typeMapping),
-		options...,
-	)
+	column := assets.NewColumn(tableColumn.Field, types.GetType(typeMapping), options...)
 
 	if tableColumn.Collation != nil {
 		column.SetPlatformOption("collation", *tableColumn.Collation)
@@ -306,9 +304,10 @@ func (m *PostgreSQLSchemaManager) GetPortableViewDefinition(view map[string]any)
 }
 
 func (m *PostgreSQLSchemaManager) GetPortableTableIndexesList(
+	ctx context.Context,
 	tableIndexes []*dtos.SelectIndexColumnsDto,
 	tableName string,
-) map[string]*assets.Index {
+) (map[string]*assets.Index, error) {
 	buffer := make([]*dtos.PortableTableIndexesDto, 0)
 
 	for _, row := range tableIndexes {
@@ -320,11 +319,12 @@ func (m *PostgreSQLSchemaManager) GetPortableTableIndexesList(
 			strings.Join(colNumbers, " ,"),
 		)
 
-		indexColumns := platforms.Fetch(
-			m.Connection,
-			columnNameSql,
-			make([]dtos.GetColNameDto, 0),
-		)
+		indexColumns := make([]dtos.GetColNameDto, 0)
+		err := platforms.FetchScan(ctx, m.Connection, columnNameSql, &indexColumns)
+		if err != nil {
+			return nil, errors.Wrap(err, "error when fetching column name")
+		}
+
 		for _, colNum := range colNumbers {
 			for _, colRow := range indexColumns {
 				if colNum != colRow.Attnum {
@@ -344,26 +344,30 @@ func (m *PostgreSQLSchemaManager) GetPortableTableIndexesList(
 		}
 	}
 
-	return m.AbstractSchemaManager.GetPortableTableIndexesList(
-		buffer,
-		tableName,
-	)
+	return m.AbstractSchemaManager.GetPortableTableIndexesList(buffer, tableName), nil
 }
 
-func (m *PostgreSQLSchemaManager) GetPortableTableDefinition(table dtos.GetPortableTableDefinitionInputDto) string {
-	currentSchema := m.getCurrentSchema()
-
-	if table.GetSchemaName() == *currentSchema {
-		return table.GetTableName()
+func (m *PostgreSQLSchemaManager) GetPortableTableDefinition(
+	ctx context.Context,
+	table dtos.GetPortableTableDefinitionInputDto,
+) (string, error) {
+	currentSchema, err := m.getCurrentSchema(ctx)
+	if err != nil {
+		return "", errors.Wrap(err, "error when getting current schema")
 	}
 
-	return table.GetSchemaName() + "." + table.GetTableName()
+	if table.GetSchemaName() == *currentSchema {
+		return table.GetTableName(), nil
+	}
+
+	return table.GetSchemaName() + "." + table.GetTableName(), nil
 }
 
 func (m *PostgreSQLSchemaManager) SelectTableColumns(
+	ctx context.Context,
 	databaseName string,
 	tableName *string,
-) []*dtos.SelectTableColumnsDto {
+) ([]*dtos.SelectTableColumnsDto, error) {
 	sql := "SELECT "
 
 	if tableName == nil {
@@ -414,18 +418,26 @@ func (m *PostgreSQLSchemaManager) SelectTableColumns(
 
 	sql += " WHERE " + strings.Join(conditions, " AND ") + " ORDER BY a.attnum"
 
-	typedData := make([]dtos.SelectTableColumnsDto, 0)
+	items := make([]dtos.SelectTableColumnsDto, 0)
 
-	return smt.MapSlice(
-		platforms.Fetch(m.Connection, sql, typedData),
-		ptrs.AsPtr,
-	)
+	err := platforms.FetchScan(ctx, m.Connection, sql, &items)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when fetching table columns")
+	}
+
+	columns := make([]*dtos.SelectTableColumnsDto, 0)
+	for _, item := range items {
+		columns = append(columns, &item)
+	}
+
+	return columns, nil
 }
 
 func (m *PostgreSQLSchemaManager) SelectIndexColumns(
+	ctx context.Context,
 	databaseName string,
 	tableName *string,
-) []*dtos.SelectIndexColumnsDto {
+) ([]*dtos.SelectIndexColumnsDto, error) {
 	sql := "SELECT"
 
 	if tableName == nil {
@@ -455,16 +467,24 @@ func (m *PostgreSQLSchemaManager) SelectIndexColumns(
 
 	sql += " WHERE " + strings.Join(conditions, " AND ") + ")"
 
-	return smt.MapSlice(
-		platforms.Fetch(
-			m.Connection,
-			sql,
-			make([]dtos.SelectIndexColumnsDto, 0),
-		), ptrs.AsPtr,
-	)
+	items := make([]dtos.SelectIndexColumnsDto, 0)
+	err := platforms.FetchScan(ctx, m.Connection, sql, &items)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when fetching index columns")
+	}
+
+	columns := make([]*dtos.SelectIndexColumnsDto, 0)
+	for _, item := range items {
+		columns = append(columns, &item)
+	}
+
+	return columns, nil
 }
 
-func (m *PostgreSQLSchemaManager) SelectTableNames(databaseName string) []*dtos.SelectTableNamesDto {
+func (m *PostgreSQLSchemaManager) SelectTableNames(
+	ctx context.Context,
+	databaseName string,
+) ([]*dtos.SelectTableNamesDto, error) {
 	sql := `
 SELECT quote_ident(table_name) AS table_name,
 	table_schema AS schema_name
@@ -477,19 +497,25 @@ AND table_name != 'spatial_ref_sys'
 AND table_type = 'BASE TABLE'
 	`
 
-	return smt.MapSlice(
-		platforms.Fetch(
-			m.Connection,
-			sql,
-			make([]dtos.SelectTableNamesDto, 0),
-		), ptrs.AsPtr,
-	)
+	items := make([]dtos.SelectTableNamesDto, 0)
+	err := platforms.FetchScan(ctx, m.Connection, sql, &items)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when fetching table names")
+	}
+
+	names := make([]*dtos.SelectTableNamesDto, 0)
+	for _, item := range items {
+		names = append(names, &item)
+	}
+
+	return names, nil
 }
 
 func (m *PostgreSQLSchemaManager) SelectForeignKeyColumns(
+	ctx context.Context,
 	databaseName string,
 	tableName *string,
-) []*dtos.SelectForeignKeyColumnsDto {
+) ([]*dtos.SelectForeignKeyColumnsDto, error) {
 	sql := "SELECT"
 
 	if tableName == nil {
@@ -512,24 +538,27 @@ func (m *PostgreSQLSchemaManager) SelectForeignKeyColumns(
 	conditions = append(conditions, "n.oid = c.relnamespace")
 	conditions = append(conditions, m.buildQueryConditions(tableName)...)
 
-	sql += " WHERE " + strings.Join(
-		conditions,
-		" AND ",
-	) + ") AND r.contype = 'f'"
+	sql += " WHERE " + strings.Join(conditions, " AND ") + ") AND r.contype = 'f'"
 
-	return smt.MapSlice(
-		platforms.Fetch(
-			m.Connection,
-			sql,
-			make([]dtos.SelectForeignKeyColumnsDto, 0),
-		), ptrs.AsPtr,
-	)
+	items := make([]dtos.SelectForeignKeyColumnsDto, 0)
+	err := platforms.FetchScan(ctx, m.Connection, sql, &items)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when fetching foreign key columns")
+	}
+
+	columns := make([]*dtos.SelectForeignKeyColumnsDto, 0)
+	for _, item := range items {
+		columns = append(columns, &item)
+	}
+
+	return columns, nil
 }
 
 func (m *PostgreSQLSchemaManager) FetchTableOptionsByTable(
+	ctx context.Context,
 	databaseName string,
 	tableName *string,
-) map[string]*dtos.FetchTableOptionsByTableDto {
+) (map[string]*dtos.FetchTableOptionsByTableDto, error) {
 	sql := `
 	SELECT c.relname,
 		CASE c.relpersistence WHEN 'u' THEN true ELSE false END as unlogged,
@@ -547,22 +576,20 @@ func (m *PostgreSQLSchemaManager) FetchTableOptionsByTable(
 
 	result := make(map[string]*dtos.FetchTableOptionsByTableDto)
 
-	smt.MapSlice(
-		platforms.Fetch(
-			m.Connection,
-			sql,
-			make([]dtos.FetchTableOptionsByTableDto, 0),
-		),
-		func(t dtos.FetchTableOptionsByTableDto) *dtos.FetchTableOptionsByTableDto {
-			if result[t.Relname] != nil {
-				panic(fmt.Sprintf("duplicate table name: %s", t.Relname))
-			}
-			result[t.Relname] = &t
-			return &t
-		},
-	)
+	items := make([]dtos.FetchTableOptionsByTableDto, 0)
+	err := platforms.FetchScan(ctx, m.Connection, sql, &items)
+	if err != nil {
+		return nil, errors.Wrap(err, "error when fetching table options by table")
+	}
 
-	return result
+	for _, t := range items {
+		if result[t.Relname] != nil {
+			panic(fmt.Sprintf("duplicate table name: %s", t.Relname))
+		}
+		result[t.Relname] = &t
+	}
+
+	return result, nil
 }
 
 func (m *PostgreSQLSchemaManager) buildQueryConditions(tableName *string) []string {
@@ -574,28 +601,16 @@ func (m *PostgreSQLSchemaManager) buildQueryConditions(tableName *string) []stri
 			parts := strings.Split(*tableName, ".")
 			schemaName := parts[0]
 			tableNameStr = parts[1]
-			conditions = append(
-				conditions,
-				"n.nspname = "+m.Platform.QuoteStringLiteral(schemaName),
-			)
+			conditions = append(conditions, "n.nspname = "+m.Platform.QuoteStringLiteral(schemaName))
 		} else {
-			conditions = append(
-				conditions,
-				"n.nspname = ANY(current_schemas(false))",
-			)
+			conditions = append(conditions, "n.nspname = ANY(current_schemas(false))")
 		}
 
 		identifier := assets.NewIdentifier(tableNameStr)
-		conditions = append(
-			conditions,
-			"c.relname = "+m.Platform.QuoteStringLiteral(identifier.GetName()),
-		)
+		conditions = append(conditions, "c.relname = "+m.Platform.QuoteStringLiteral(identifier.GetName()))
 	}
 
-	conditions = append(
-		conditions,
-		"n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')",
-	)
+	conditions = append(conditions, "n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')")
 
 	return conditions
 }
@@ -605,5 +620,7 @@ func (m *PostgreSQLSchemaManager) parseDefaultExpression(defaultExpression *stri
 		return nil
 	}
 
-	return ptrs.AsPtr(strings.ReplaceAll(*defaultExpression, "''", "'"))
+	expr := strings.ReplaceAll(*defaultExpression, "''", "'")
+
+	return &expr
 }

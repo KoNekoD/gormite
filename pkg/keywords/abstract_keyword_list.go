@@ -1,7 +1,6 @@
 package keywords
 
 import (
-	"github.com/KoNekoD/smt/pkg/smt"
 	"strings"
 )
 
@@ -16,12 +15,13 @@ func NewKeywordList(child KeywordListInterface) *KeywordList {
 }
 
 func (k *KeywordList) InitializeKeywords() {
-	k.keywords = smt.SliceFlip(
-		smt.MapSlice(
-			k.child.GetKeywords(),
-			strings.ToUpper,
-		),
-	)
+	keywords := make(map[string]int)
+
+	for index, keyword := range k.child.GetKeywords() {
+		keywords[strings.ToUpper(keyword)] = index
+	}
+
+	k.keywords = keywords
 }
 
 // IsKeyword - Checks if the given word is a keyword of this dialect/vendor platform.

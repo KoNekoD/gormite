@@ -9,8 +9,8 @@ import (
 	"github.com/KoNekoD/gormite/pkg/platforms"
 	"github.com/KoNekoD/gormite/pkg/platforms/postgres_platform"
 	"github.com/KoNekoD/gormite/pkg/schema_managers/postgres_schema_manager"
-	"github.com/charmbracelet/log"
 	"github.com/pkg/errors"
+	"log"
 	"os"
 	"time"
 )
@@ -58,7 +58,10 @@ func (r *DiffRunner) Run(ctx context.Context) error {
 
 	manager := postgres_schema_manager.NewPostgreSQLSchemaManager(platforms.NewConnection(db, platform), platform)
 
-	oldSchema := manager.IntrospectSchema()
+	oldSchema, err := manager.IntrospectSchema(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to introspect remote schema")
+	}
 
 	newSchema, err := local_schema.IntrospectLocalSchema(r.opts.ConfigPath)
 	if err != nil {
@@ -103,17 +106,17 @@ func (r *DiffRunner) Run(ctx context.Context) error {
 		}
 	case ScenarioTypeValidate:
 		if diff.IsEmpty() {
-			log.Info("The database schema is in sync with the mapping files.")
+			log.Println("The database schema is in sync with the mapping files.")
 			return nil
 		}
 
 		sqlList := manager.AlterSchemaSqlList(diff)
 
-		log.Error("The database schema is not in sync with the current mapping file.")
+		log.Println("The database schema is not in sync with the current mapping file.")
 
-		log.Infof("%d schema diff(s) detected:", len(sqlList))
+		log.Printf("%d schema diff(s) detected:\n", len(sqlList))
 		for _, sql := range sqlList {
-			log.Infof("    %s", sql)
+			log.Printf("    %s\n", sql)
 		}
 
 		return errors.New("The database schema is not in sync with the current mapping file.")

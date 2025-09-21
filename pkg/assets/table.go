@@ -1,13 +1,14 @@
 package assets
 
 import (
-	"github.com/KoNekoD/gormite/pkg/dtos"
-	"github.com/KoNekoD/gormite/pkg/types"
-	"github.com/KoNekoD/smt/pkg/smt"
-	"github.com/elliotchance/orderedmap/v3"
+	"iter"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/KoNekoD/gormite/pkg/dtos"
+	"github.com/KoNekoD/gormite/pkg/types"
+	"github.com/elliotchance/orderedmap/v3"
 )
 
 // Table - Object Representation of a table.
@@ -133,14 +134,7 @@ func (t *Table) AddUniqueConstraint(
 		)
 	}
 
-	return t.addUniqueConstraint(
-		t.createUniqueConstraint(
-			columnNames,
-			*indexName,
-			flags,
-			options,
-		),
-	)
+	return t.addUniqueConstraint(t.createUniqueConstraint(columnNames, *indexName, flags, options))
 }
 
 func (t *Table) AddIndex(columnNames []string, indexName *string, flags []string, options map[string]any) *Table {
@@ -149,23 +143,10 @@ func (t *Table) AddIndex(columnNames []string, indexName *string, flags []string
 		columns = append(columns, t.GetName())
 		columns = append(columns, columnNames...)
 		indexName = new(string)
-		*indexName = t.generateIdentifierName(
-			columns,
-			"idx",
-			t.getMaxIdentifierLength(),
-		)
+		*indexName = t.generateIdentifierName(columns, "idx", t.getMaxIdentifierLength())
 	}
 
-	return t.addIndex(
-		t.createIndex(
-			columnNames,
-			*indexName,
-			false,
-			false,
-			flags,
-			options,
-		),
-	)
+	return t.addIndex(t.createIndex(columnNames, *indexName, false, false, flags, options))
 }
 
 // DropPrimaryKey - Drops the primary key from this table.
@@ -196,23 +177,10 @@ func (t *Table) AddUniqueIndex(columnNames []string, indexName *string, options 
 		columns = append(columns, t.GetName())
 		columns = append(columns, columnNames...)
 		indexName = new(string)
-		*indexName = t.generateIdentifierName(
-			columns,
-			"uniq",
-			t.getMaxIdentifierLength(),
-		)
+		*indexName = t.generateIdentifierName(columns, "uniq", t.getMaxIdentifierLength())
 	}
 
-	return t.addIndex(
-		t.createIndex(
-			columnNames,
-			*indexName,
-			true,
-			false,
-			make([]string, 0),
-			options,
-		),
-	)
+	return t.addIndex(t.createIndex(columnNames, *indexName, true, false, make([]string, 0), options))
 }
 
 // RenameIndex - Renames an index.
@@ -249,19 +217,10 @@ func (t *Table) RenameIndex(oldName string, newName *string) *Table {
 	delete(t.indexes, oldName)
 
 	if oldIndex.IsUnique() {
-		return t.AddUniqueIndex(
-			oldIndex.GetColumns(),
-			newName,
-			oldIndex.GetOptions(),
-		)
+		return t.AddUniqueIndex(oldIndex.GetColumns(), newName, oldIndex.GetOptions())
 	}
 
-	return t.AddIndex(
-		oldIndex.GetColumns(),
-		newName,
-		oldIndex.GetFlags(),
-		oldIndex.GetOptions(),
-	)
+	return t.AddIndex(oldIndex.GetColumns(), newName, oldIndex.GetFlags(), oldIndex.GetOptions())
 }
 
 // ColumnsAreIndexed - Checks if an index begins in the order of the given columns.
@@ -275,11 +234,7 @@ func (t *Table) ColumnsAreIndexed(columnNames []string) bool {
 	return false
 }
 
-func (t *Table) AddColumn(
-	name string,
-	typeName types.AbstractTypeInterface,
-	options ...ColumnOption,
-) *Column {
+func (t *Table) AddColumn(name string, typeName types.AbstractTypeInterface, options ...ColumnOption) *Column {
 	column := NewColumn(name, typeName, options...)
 
 	t.addColumn(column)
@@ -353,11 +308,7 @@ func (t *Table) AddForeignKeyConstraint(
 		columns = append(columns, t.GetName())
 		columns = append(columns, localColumnNames...)
 		name = new(string)
-		*name = t.generateIdentifierName(
-			columns,
-			"fk",
-			t.getMaxIdentifierLength(),
-		)
+		*name = t.generateIdentifierName(columns, "fk", t.getMaxIdentifierLength())
 	}
 
 	for _, columnName := range localColumnNames {
@@ -455,8 +406,12 @@ func (t *Table) RemoveUniqueConstraint(name string) {
 	delete(t.uniqueConstraints, name)
 }
 
-func (t *Table) GetColumns() []*Column {
-	return smt.IterToSlice(t.columns.Values())
+func (t *Table) GetColumns() iter.Seq[*Column] {
+	return t.columns.Values()
+}
+
+func (t *Table) LenColumns() int {
+	return t.columns.Len()
 }
 
 // HasColumn - Returns whether this table has a Column with the given name.

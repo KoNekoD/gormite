@@ -1,16 +1,17 @@
 package schema_managers
 
 import (
+	"context"
 	"github.com/KoNekoD/gormite/pkg/assets"
 	"github.com/KoNekoD/gormite/pkg/dtos"
 )
 
 type AbstractSchemaManagerInterface interface {
-	IntrospectSchema() *assets.Schema
-	ListTables() []*assets.Table
-	ListSequences() []*assets.Sequence
-	CreateSchemaConfig() *dtos.SchemaConfig
-	ListSchemaNames() []string
+	IntrospectSchema(ctx context.Context) (*assets.Schema, error)
+	ListTables(ctx context.Context) ([]*assets.Table, error)
+	ListSequences(ctx context.Context) ([]*assets.Sequence, error)
+	CreateSchemaConfig(ctx context.Context) (*dtos.SchemaConfig, error)
+	ListSchemaNames(ctx context.Context) ([]string, error)
 
 	GetPortableDatabaseDefinition(row map[string]any) string
 	GetPortableSequenceDefinition(sequence *dtos.ListSequencesDto) *assets.Sequence
@@ -18,29 +19,34 @@ type AbstractSchemaManagerInterface interface {
 	GetPortableViewDefinition(view map[string]any) *assets.View
 	GetPortableTableForeignKeyDefinition(tableForeignKey *dtos.SelectForeignKeyColumnsDto) *assets.ForeignKeyConstraint
 
-	GetPortableTableDefinition(table dtos.GetPortableTableDefinitionInputDto) string
+	GetPortableTableDefinition(ctx context.Context, table dtos.GetPortableTableDefinitionInputDto) (string, error)
 
-	SelectTableNames(databaseName string) []*dtos.SelectTableNamesDto
+	SelectTableNames(ctx context.Context, databaseName string) ([]*dtos.SelectTableNamesDto, error)
 	SelectTableColumns(
+		ctx context.Context,
 		databaseName string,
 		tableName *string,
-	) []*dtos.SelectTableColumnsDto
+	) ([]*dtos.SelectTableColumnsDto, error)
 	SelectIndexColumns(
+		ctx context.Context,
 		databaseName string,
 		tableName *string,
-	) []*dtos.SelectIndexColumnsDto
+	) ([]*dtos.SelectIndexColumnsDto, error)
 	SelectForeignKeyColumns(
+		ctx context.Context,
 		databaseName string,
 		tableName *string,
-	) []*dtos.SelectForeignKeyColumnsDto
+	) ([]*dtos.SelectForeignKeyColumnsDto, error)
 
 	FetchTableOptionsByTable(
+		ctx context.Context,
 		databaseName string,
 		tableName *string,
-	) map[string]*dtos.FetchTableOptionsByTableDto
+	) (map[string]*dtos.FetchTableOptionsByTableDto, error)
 
 	GetPortableTableIndexesList(
+		ctx context.Context,
 		tableIndexes []*dtos.SelectIndexColumnsDto,
 		tableName string,
-	) map[string]*assets.Index
+	) (map[string]*assets.Index, error)
 }

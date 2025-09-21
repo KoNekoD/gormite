@@ -4,8 +4,6 @@ import (
 	"context"
 	databaseSql "database/sql"
 
-	"github.com/KoNekoD/ptrs/pkg/ptrs"
-	"github.com/KoNekoD/smt/pkg/smt"
 	"github.com/pkg/errors"
 )
 
@@ -49,14 +47,14 @@ func SelectExec[T any](ctx context.Context, db Database, sql string, args ...any
 }
 
 func SelectExecSlice[T any](ctx context.Context, db Database, sql string, args ...any) ([]*T, error) {
-	var v []T
+	var v []*T
 
 	err := db.Select(sql, args...).Scan(&v).Exec(ctx)
 	if err != nil && !errors.Is(err, databaseSql.ErrNoRows) {
 		return nil, errors.WithStack(err)
 	}
 
-	return smt.MapSlice(v, ptrs.AsPtr), nil
+	return v, nil
 }
 
 func SelectExecLit[T any](ctx context.Context, db Database, sql string, args ...any) (T, error) {

@@ -2,7 +2,6 @@ package assets
 
 import (
 	"github.com/KoNekoD/gormite/pkg/utils"
-	"github.com/KoNekoD/smt/pkg/smt"
 	"golang.org/x/exp/maps"
 	"strings"
 )
@@ -53,9 +52,7 @@ func NewForeignKeyConstraint(
 	return v
 }
 
-func (c *ForeignKeyConstraint) createIdentifierMap(
-	names []string,
-) map[string]*Identifier {
+func (c *ForeignKeyConstraint) createIdentifierMap(names []string) map[string]*Identifier {
 	identifiers := make(map[string]*Identifier)
 
 	for _, name := range names {
@@ -77,9 +74,7 @@ func (c *ForeignKeyConstraint) GetLocalColumns() []string {
 // But only if they were defined with one or the referencing table column name
 // is a keyword reserved by the platform
 // Otherwise, the plain unquoted value as inserted is returned
-func (c *ForeignKeyConstraint) GetQuotedLocalColumns(
-	platform AssetsPlatform,
-) []string {
+func (c *ForeignKeyConstraint) GetQuotedLocalColumns(platform AssetsPlatform) []string {
 	columns := make([]string, 0, len(c.localColumnNames))
 
 	for _, column := range c.localColumnNames {
@@ -89,26 +84,38 @@ func (c *ForeignKeyConstraint) GetQuotedLocalColumns(
 	return columns
 }
 
-// GetUnquotedLocalColumns Returns unquoted representation of local
-// table column names for comparison with other FK
+// GetUnquotedLocalColumns returns unquoted representation of local table column names for comparison with other FK
 func (c *ForeignKeyConstraint) GetUnquotedLocalColumns() []string {
-	return smt.MapSlice(c.GetLocalColumns(), c.trimQuotes)
+	items := c.GetLocalColumns()
+
+	result := make([]string, len(items))
+
+	for i, item := range items {
+		result[i] = c.trimQuotes(item)
+	}
+
+	return result
 }
 
-// GetUnquotedForeignColumns Returns unquoted representation of foreign
-// table column names for comparison with other FK
+// GetUnquotedForeignColumns returns unquoted representation of foreign table column names for comparison with other FK
 func (c *ForeignKeyConstraint) GetUnquotedForeignColumns() []string {
-	return smt.MapSlice(c.GetForeignColumns(), c.trimQuotes)
+	items := c.GetForeignColumns()
+
+	result := make([]string, len(items))
+
+	for i, item := range items {
+		result[i] = c.trimQuotes(item)
+	}
+
+	return result
 }
 
-// GetForeignTableName Returns the name of the referenced table
-// the foreign key constraint is associated with
+// GetForeignTableName Returns the name of the referenced table the foreign key constraint is associated with
 func (c *ForeignKeyConstraint) GetForeignTableName() string {
 	return c.foreignTableName.GetName()
 }
 
-// GetUnqualifiedForeignTableName Returns the non-schema
-// qualified foreign table name
+// GetUnqualifiedForeignTableName Returns the non-schema qualified foreign table name
 func (c *ForeignKeyConstraint) GetUnqualifiedForeignTableName() string {
 	name := c.foreignTableName.GetName()
 	position := strings.Index(name, ".")
@@ -126,14 +133,11 @@ func (c *ForeignKeyConstraint) GetUnqualifiedForeignTableName() string {
 // But only if it was defined with one or the referenced table name
 // is a keyword reserved by the platform
 // Otherwise, the plain unquoted value as inserted is returned
-func (c *ForeignKeyConstraint) GetQuotedForeignTableName(
-	platform AssetsPlatform,
-) string {
+func (c *ForeignKeyConstraint) GetQuotedForeignTableName(platform AssetsPlatform) string {
 	return c.foreignTableName.GetQuotedName(platform)
 }
 
-// GetForeignColumns Returns the names of the referenced table columns
-// the foreign key constraint is associated with
+// GetForeignColumns Returns the names of the referenced table columns the foreign key constraint is associated with
 func (c *ForeignKeyConstraint) GetForeignColumns() []string {
 	return maps.Keys(c.foreignColumnNames)
 }
@@ -144,9 +148,7 @@ func (c *ForeignKeyConstraint) GetForeignColumns() []string {
 // But only if they were defined with one or the referenced table column name
 // is a keyword reserved by the platform
 // Otherwise, the plain unquoted value as inserted is returned
-func (c *ForeignKeyConstraint) GetQuotedForeignColumns(
-	platform AssetsPlatform,
-) []string {
+func (c *ForeignKeyConstraint) GetQuotedForeignColumns(platform AssetsPlatform) []string {
 	columns := make([]string, 0, len(c.foreignColumnNames))
 
 	for _, column := range c.foreignColumnNames {

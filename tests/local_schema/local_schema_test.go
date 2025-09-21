@@ -3,7 +3,6 @@ package local_schema
 import (
 	"github.com/KoNekoD/gormite/pkg/local_schema"
 	"github.com/KoNekoD/gormite/pkg/platforms"
-	_ "github.com/KoNekoD/gormite/tests/pkg/local_schema/resources"
 	"github.com/pkg/errors"
 	"testing"
 )

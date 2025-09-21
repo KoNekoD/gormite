@@ -3,7 +3,6 @@ package types
 import (
 	"fmt"
 	"github.com/KoNekoD/gormite/pkg/enums"
-	"github.com/KoNekoD/smt/pkg/smt"
 )
 
 // BuiltinTypesMap - The map of supported doctrine mapping types.
@@ -92,21 +91,25 @@ func OverrideType(name enums.TypesType, className AbstractTypeInterface) {
 func (a *AbstractType) GetBindingType() enums.ParameterType {
 	return enums.ParameterTypeString
 }
+
 func GetTypesMap() map[enums.TypesType]string {
-	registry := GetTypeRegistry()
-	return smt.Map(
-		registry.GetMap(),
-		func(t1 enums.TypesType, t2 AbstractTypeInterface) string {
-			return fmt.Sprintf("%T", t2)
-		},
-	)
+	result := make(map[enums.TypesType]string)
+
+	for typesType, typeInterface := range GetTypeRegistry().GetMap() {
+		result[typesType] = fmt.Sprintf("%T", typeInterface)
+	}
+
+	return result
 }
+
 func (a *AbstractType) ConvertToDatabaseValueSQL(sqlExpr string, platform TypesPlatform) string {
 	return sqlExpr
 }
+
 func (a *AbstractType) ConvertToPHPValueSQL(sqlExpr string, platform TypesPlatform) string {
 	return sqlExpr
 }
+
 func (a *AbstractType) GetMappedDatabaseTypes(platform TypesPlatform) []string {
 	return make([]string, 0)
 }

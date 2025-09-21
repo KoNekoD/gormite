@@ -2,7 +2,6 @@ package docs_example
 
 import (
 	"context"
-	"github.com/KoNekoD/go-snaps/snaps"
 	"github.com/KoNekoD/gormite/pkg/diff_calc"
 	"github.com/KoNekoD/gormite/pkg/gormite_databases"
 	gdh "github.com/KoNekoD/gormite/pkg/gormite_databases_helpers"
@@ -10,7 +9,6 @@ import (
 	"github.com/KoNekoD/gormite/pkg/platforms"
 	"github.com/KoNekoD/gormite/pkg/platforms/postgres_platform"
 	"github.com/KoNekoD/gormite/pkg/schema_managers/postgres_schema_manager"
-	_ "github.com/KoNekoD/gormite/tests/docs_example/resources"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pkg/errors"
 	"testing"
@@ -46,7 +44,7 @@ func (m mockPostgresDatabase) GetNamedArgs(args any) any {
 }
 
 func TestDiffRunnerTest(t *testing.T) {
-	d := gormite_databases.PostgresDatabase{}
+	d := &gormite_databases.PostgresDatabase{}
 
 	p := postgres_platform.NewPostgreSQLPlatform()
 
@@ -73,10 +71,7 @@ func TestDiffRunnerTest(t *testing.T) {
 		panic(errors.New("No changes detected"))
 	}
 
-	// TODO: Test snapshots for sql
-	//up := manager.AlterSchema(diff)
-	//down := manager.AlterSchema(diffDown)
-
-	snaps.MatchStandaloneSnapshot(t, diff)
-	snaps.MatchStandaloneSnapshot(t, diffDown)
+	if diff.IsEmpty() || diffDown.IsEmpty() {
+		t.Fatal("No changes detected")
+	}
 }

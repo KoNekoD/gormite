@@ -134,12 +134,9 @@ func (a *AbstractAsset) generateIdentifierName(
 	prefix string,
 	maxSize int,
 ) string {
-	hashParts := make([]string, 0)
-	for _, column := range columnNames {
-		hashParts = append(
-			hashParts,
-			utils.Dechex(int64(crc32.ChecksumIEEE([]byte(column)))),
-		)
+	hashParts := make([]string, len(columnNames))
+	for i, column := range columnNames {
+		hashParts[i] = utils.Dechex(int64(crc32.ChecksumIEEE([]byte(column))))
 	}
 
 	hash := strings.Join(hashParts, "")

@@ -3,7 +3,6 @@ package local_schema
 import (
 	"github.com/KoNekoD/gormite/pkg/assets"
 	"github.com/KoNekoD/gormite/pkg/types"
-	"github.com/KoNekoD/ptrs/pkg/ptrs"
 	"github.com/pkg/errors"
 	"go/ast"
 	"slices"
@@ -38,12 +37,14 @@ func (t *tableBag) parseColumnTags(fieldType *ast.Ident, objectsKeys []string) (
 	onUpdateTag, _ := tags.Get(onUpdateTagName)
 	var onUpdate *string
 	if onUpdateTag != nil {
-		onUpdate = ptrs.AsPtr(onUpdateTag.Value())
+		onUpdateTmp := onUpdateTag.Value()
+		onUpdate = &onUpdateTmp
 	}
 	onDeleteTag, _ := tags.Get(onDeleteTagName)
 	var onDelete *string
 	if onDeleteTag != nil {
-		onDelete = ptrs.AsPtr(onDeleteTag.Value())
+		onDeleteTmp := onDeleteTag.Value()
+		onDelete = &onDeleteTmp
 	}
 
 	pk, _ := tags.Get(primaryKeyTagName)
@@ -56,7 +57,11 @@ func (t *tableBag) parseColumnTags(fieldType *ast.Ident, objectsKeys []string) (
 	lengthTag, _ := tags.Get(lengthTagName)
 	length := 255
 	if lengthTag != nil {
-		length, _ = strconv.Atoi(lengthTag.Value())
+		var err error
+		length, err = strconv.Atoi(lengthTag.Value())
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse length tag")
+		}
 	}
 
 	uniqTag, _ := tags.Get(uniqueConstraintTagName)
@@ -78,18 +83,21 @@ func (t *tableBag) parseColumnTags(fieldType *ast.Ident, objectsKeys []string) (
 	isIndex := indexTag != nil
 	var indexName *string
 	if isIndex && indexTag != nil {
-		indexName = ptrs.AsPtr(indexTag.Value())
+		indexNameTmp := indexTag.Value()
+		indexName = &indexNameTmp
 	}
 	indexCondTag, _ := tags.Get(indexConditionTagName)
 	isIndexCondition := indexCondTag != nil
 	var indexCondition *string
 	if isIndexCondition && indexCondTag != nil {
-		indexCondition = ptrs.AsPtr(indexCondTag.Value())
+		indexConditionTmp := indexCondTag.Value()
+		indexCondition = &indexConditionTmp
 	}
 
 	var defaultValue *string
 	if defaultTag, _ := tags.Get(defaultValueTagName); defaultTag != nil {
-		defaultValue = ptrs.AsPtr(defaultTag.Value())
+		defaultValueTmp := defaultTag.Value()
+		defaultValue = &defaultValueTmp
 	}
 
 	var columnType types.AbstractTypeInterface

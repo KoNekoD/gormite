@@ -9,9 +9,7 @@ import (
 	"github.com/KoNekoD/gormite/pkg/sql_builders"
 	"github.com/KoNekoD/gormite/pkg/types"
 	"github.com/KoNekoD/gormite/pkg/utils"
-	"github.com/KoNekoD/smt/pkg/smt"
 	"github.com/elliotchance/pie/v2"
-	"github.com/gookit/goutil/strutil"
 	"regexp"
 	"slices"
 	"strconv"
@@ -501,12 +499,9 @@ func (parent *AbstractPlatform) GetCreateTableWithoutForeignKeysSQL(table *asset
 	a := parent.child
 	return a.BuildCreateTableSQL(table, false)
 }
-func (parent *AbstractPlatform) BuildCreateTableSQL(
-	table *assets.Table,
-	createForeignKeys bool,
-) []string {
+func (parent *AbstractPlatform) BuildCreateTableSQL(table *assets.Table, createForeignKeys bool) []string {
 	a := parent.child
-	if len(table.GetColumns()) == 0 {
+	if table.LenColumns() == 0 {
 		panic("NoColumnsSpecifiedForTable")
 	}
 
@@ -549,7 +544,7 @@ func (parent *AbstractPlatform) BuildCreateTableSQL(
 	options[`foreignKeys`] = foreignKeys
 
 	columns := make([]map[string]any, 0)
-	for _, column := range table.GetColumns() {
+	for column := range table.GetColumns() {
 		columnData := a.ColumnToArray(column)
 
 		if slices.Contains(primary, column.GetName()) {
@@ -568,21 +563,14 @@ func (parent *AbstractPlatform) BuildCreateTableSQL(
 			}
 		}
 
-		for _, column := range table.GetColumns() {
+		for column := range table.GetColumns() {
 			comment := column.GetComment()
 
 			if comment == `` {
 				continue
 			}
 
-			sql = append(
-				sql,
-				a.GetCommentOnColumnSQL(
-					tableName,
-					column.GetQuotedName(a),
-					comment,
-				),
-			)
+			sql = append(sql, a.GetCommentOnColumnSQL(tableName, column.GetQuotedName(a), comment))
 		}
 	}
 
@@ -848,10 +836,11 @@ func (parent *AbstractPlatform) GetDropSchemaSQL(schemaName string) string {
 func (parent *AbstractPlatform) QuoteIdentifier(identifier string) string {
 	a := parent.child
 	if strings.Contains(identifier, `.`) {
-		parts := smt.MapSlice(
-			strings.Split(identifier, `.`),
-			a.QuoteSingleIdentifier,
-		)
+		parts := make([]string, 0)
+
+		for _, s := range strings.Split(identifier, `.`) {
+			parts = append(parts, a.QuoteSingleIdentifier(s))
+		}
 
 		return strings.Join(parts, `.`)
 	}
@@ -1438,18 +1427,17 @@ func (parent *AbstractPlatform) GetReservedKeywordsList() keywords.KeywordListIn
 func (parent *AbstractPlatform) QuoteStringLiteral(str string) string {
 	return "'" + strings.ReplaceAll(str, "'", "''") + "'"
 }
-func (parent *AbstractPlatform) EscapeStringForLike(
-	inputString string,
-	escapeChar string,
-) string {
+
+func (parent *AbstractPlatform) EscapeStringForLike(inputString string, escapeChar string) string {
 	a := parent.child
 	quoted := utils.Quote(a.GetLikeWildcardCharacters()+escapeChar, `~`)
 
 	r := regexp.MustCompile(`~([` + quoted + `])~u`)
-	sql := r.ReplaceAllString(strutil.AddSlashes(escapeChar)+`1`, inputString)
+	sql := r.ReplaceAllString(utils.AddSlashes(escapeChar)+`1`, inputString)
 
 	return sql
 }
+
 func (parent *AbstractPlatform) ColumnToArray(column *assets.Column) map[string]any {
 	a := parent.child
 	arr := column.ToArray()

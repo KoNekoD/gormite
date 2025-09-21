@@ -84,9 +84,9 @@ func (c *CompositeExpression) ToString() string {
 		return c.parts[0].ToString()
 	}
 
-	var partsStrings []string
-	for _, part := range c.parts {
-		partsStrings = append(partsStrings, part.ToString())
+	partsStrings := make([]string, c.Count())
+	for i, part := range c.parts {
+		partsStrings[i] = part.ToString()
 	}
 
 	return "(" + strings.Join(partsStrings, ") "+c.exprType+" (") + ")"

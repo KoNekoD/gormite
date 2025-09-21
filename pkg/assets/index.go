@@ -1,8 +1,7 @@
 package assets
 
 import (
-	"github.com/KoNekoD/smt/pkg/smt"
-	"github.com/gookit/goutil/arrutil"
+	"github.com/KoNekoD/gormite/pkg/utils"
 	"golang.org/x/exp/maps"
 	"slices"
 	"strings"
@@ -92,16 +91,17 @@ func (i *Index) GetQuotedColumns(platform AssetsPlatform) []string {
 		subParts = i.GetOption("lengths").([]string)
 	}
 
-	var length *string
 	columns := make([]string, 0)
 
 	for _, column := range i.columns {
-		length, subParts = smt.SliceShift(subParts)
-
 		quotedColumn := column.GetQuotedName(platform)
 
-		if length != nil {
-			quotedColumn += "(" + *length + ")"
+		if len(subParts) > 0 {
+			length := subParts[0]
+
+			quotedColumn += "(" + length + ")"
+
+			subParts = subParts[1:]
 		}
 
 		columns = append(columns, quotedColumn)
@@ -136,12 +136,15 @@ func (i *Index) IsUnique() bool {
 func (i *Index) HasColumnAtPosition(name string, pos int) bool {
 	name = i.trimQuotes(strings.ToLower(name))
 
-	indexColumns := make([]string, 0)
-	for _, s := range i.GetUnquotedColumns() {
-		indexColumns = append(indexColumns, strings.ToLower(s))
+	for index, s := range i.GetUnquotedColumns() {
+		s = strings.ToLower(s)
+
+		if s == name {
+			return index == pos
+		}
 	}
 
-	return smt.SliceSearch(name, indexColumns) == pos
+	return false
 }
 
 // SpansColumns Checks if this index exactly spans the given
@@ -283,21 +286,14 @@ func (i *Index) samePartialIndex(other *Index) bool {
 // hasSameColumnLengths Returns whether the index has the
 // same column lengths as the other
 func (i *Index) hasSameColumnLengths(other *Index) bool {
-	filter := func(length *int) bool {
-		return length != nil
-	}
-
 	iLengthVal, ok1 := i.options["lengths"]
 	otherLengthVal, ok2 := other.options["lengths"]
 
-	if !(ok1 && ok2) {
+	if !ok1 || !ok2 {
 		return ok1 == ok2 // If one ok two not provided, check if two is not provided, otherwise false
 	}
 
-	same := slices.Equal(
-		arrutil.Filter(iLengthVal.([]*int), filter),
-		arrutil.Filter(otherLengthVal.([]*int), filter),
-	)
+	same := slices.Equal(utils.FilterIntsPtr(iLengthVal.([]*int)), utils.FilterIntsPtr(otherLengthVal.([]*int)))
 
 	return same
 }

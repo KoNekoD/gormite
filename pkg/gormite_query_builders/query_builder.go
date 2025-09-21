@@ -11,8 +11,6 @@ import (
 	gdh "github.com/KoNekoD/gormite/pkg/gormite_databases_helpers"
 	"github.com/KoNekoD/gormite/pkg/platforms"
 	"github.com/KoNekoD/gormite/pkg/platforms/postgres_platform"
-	"github.com/KoNekoD/ptrs/pkg/ptrs"
-	"github.com/KoNekoD/smt/pkg/smt"
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 	"slices"
@@ -1091,22 +1089,10 @@ func (qb *QueryBuilder[ResultType]) ToString() string {
 	return gotSQL
 }
 
-// CreateNamedParameter - Creates a new named parameter and bind the value value to it.
-// This method provides a shortcut for {@see Statement::bindValue()}
-// when using prepared statements.
-// The parameter value specifies the value that you want to bind. If
-// placeholder is not provided createNamedParameter() will automatically
+// CreateNamedParameter creates a new named parameter and bind the value to it.
+// If placeholder is not provided createNamedParameter() will automatically
 // create a placeholder for you. An automatic placeholder will be of the
 // name ':dcValue1', ':dcValue2' etc.
-// Example:
-// <code>
-// value = 2;
-// q.eq( 'id', q.createNamedParameter( value ) );
-// stmt = q.executeQuery(); // executed with 'id = 2'
-// </code>
-// @link http://www.zetacomponents.org
-// @param string|null placeHolder The name to bind with. The string must start with a colon ':'.
-// @return string the placeholder name used.
 func (qb *QueryBuilder[ResultType]) CreateNamedParameter(
 	value any,
 	paramType enums.ParameterType,
@@ -1114,54 +1100,32 @@ func (qb *QueryBuilder[ResultType]) CreateNamedParameter(
 ) string {
 	if placeHolder == nil {
 		qb.boundCounter++
-		ph := fmt.Sprintf("@dcValue%d", qb.boundCounter)
+		ph := fmt.Sprintf(":dcValue%d", qb.boundCounter)
 		placeHolder = &ph
 	}
-	qb.SetParameter(strings.TrimPrefix(*placeHolder, "@"), value, paramType)
+	qb.SetParameter(strings.TrimPrefix(*placeHolder, ":"), value, paramType)
 	return *placeHolder
 }
 
-// CreatePositionalParameter - Creates a new positional parameter and bind the given value to it.
-// Attention: If you are using positional parameters with the query builder you have
-// to be very careful to bind all parameters in the order they appear in the SQL
-// statement , otherwise they get bound in the wrong order which can lead to serious
-// bugs in your code.
-// Example:
-// qb = conn.createQueryBuilder();
-// qb.select('u.*').from('users', 'u').where('u.username = ' . qb.createPositionalParameter('Foo', ParameterType::STRING)).orWhere('u.username = ' . qb.createPositionalParameter('Bar', ParameterType::STRING))
-func (qb *QueryBuilder[ResultType]) CreatePositionalParameter(
-	value any,
-	paramType ...enums.ParameterType,
-) string {
-	qb.SetParameter(fmt.Sprintf("%d", qb.boundCounter), value, paramType...)
+// CreatePositionalParameter creates a new positional parameter and bind the given value to it
+func (qb *QueryBuilder[ResultType]) CreatePositionalParameter(value any, paramType ...enums.ParameterType) string {
+	param := fmt.Sprintf("%d", qb.boundCounter)
+	qb.SetParameter(param, value, paramType...)
 	qb.boundCounter++
-	return "?"
+	return param
 }
 
-// GetSQLForJoins generates SQL for the JOIN clauses.
-func (qb *QueryBuilder[ResultType]) GetSQLForJoins(
-	fromAlias string,
-	knownAliases map[string]bool,
-) (string, error) {
+// GetSQLForJoins generates SQL for the JOIN clauses
+func (qb *QueryBuilder[ResultType]) GetSQLForJoins(fromAlias string, knownAliases map[string]bool) (string, error) {
 	var sqlBuilder strings.Builder
 	if qb.join[fromAlias] == nil {
 		return "", nil
 	}
 	for _, join := range qb.join[fromAlias] {
 		if knownAliases[join.GetAlias()] {
-			return "", g_err.NewNonUniqueAlias(
-				join.GetAlias(),
-				maps.Keys(knownAliases),
-			)
+			return "", g_err.NewNonUniqueAlias(join.GetAlias(), maps.Keys(knownAliases))
 		}
-		sqlBuilder.WriteString(
-			fmt.Sprintf(
-				" %s JOIN %s %s",
-				join.GetType(),
-				join.GetTable(),
-				join.GetAlias(),
-			),
-		)
+		sqlBuilder.WriteString(fmt.Sprintf(" %s JOIN %s %s", join.GetType(), join.GetTable(), join.GetAlias()))
 		if join.GetCondition() != nil {
 			sqlBuilder.WriteString(fmt.Sprintf(" ON %s", *join.GetCondition()))
 		}
@@ -1180,7 +1144,7 @@ func (qb *QueryBuilder[ResultType]) GetSQLForJoins(
 	return sqlBuilder.String(), nil
 }
 
-// Clone - Deep clone of all expression objects in the SQL parts.
+// Clone deep clone of all expression objects in the SQL parts
 func (qb *QueryBuilder[ResultType]) Clone() *QueryBuilder[ResultType] {
 	cloned := *qb
 	cloned.fromParts = make([]*dtos.From, len(qb.fromParts))
@@ -1191,12 +1155,7 @@ func (qb *QueryBuilder[ResultType]) Clone() *QueryBuilder[ResultType] {
 	for alias, joins := range qb.join {
 		cloned.join[alias] = make([]*dtos.Join, len(joins))
 		for i, join := range joins {
-			cloned.join[alias][i] = dtos.NewJoin(
-				join.GetType(),
-				join.GetTable(),
-				join.GetAlias(),
-				join.GetCondition(),
-			)
+			cloned.join[alias][i] = dtos.NewJoin(join.GetType(), join.GetTable(), join.GetAlias(), join.GetCondition())
 		}
 	}
 	if qb.where != nil {
@@ -1212,11 +1171,9 @@ func (qb *QueryBuilder[ResultType]) Clone() *QueryBuilder[ResultType] {
 	return &cloned
 }
 
-// PrepareIN - Creates a string of named parameters for the IN clause of the query.
-// https://stackoverflow.com/questions/56074423/how-to-use-where-id-in-clauses-with-jackc-pgx
+// PrepareIN creates a string of named parameters for the IN clause of the query
 func (qb *QueryBuilder[ResultType]) PrepareIN(args []string) string {
 	namedArgs := make([]string, 0, len(args))
-
 	for i := range args {
 		namedArgs = append(
 			namedArgs,
@@ -1227,36 +1184,19 @@ func (qb *QueryBuilder[ResultType]) PrepareIN(args []string) string {
 	return strings.Join(namedArgs, ", ")
 }
 
+// PrepareInArgsInt creates int named parameters for the IN clause of the query
 func (qb *QueryBuilder[ResultType]) PrepareInArgsInt(args []int) []string {
 	namedArgs := make([]string, 0, len(args))
 	for i := range args {
 		namedArgs = append(
 			namedArgs,
-			qb.CreateNamedParameter(
-				args[i],
-				enums.ParameterTypeString,
-				nil,
-			),
+			qb.CreateNamedParameter(args[i], enums.ParameterTypeString, nil),
 		)
 	}
 	return namedArgs
 }
 
-func (qb *QueryBuilder[ResultType]) PrepareInArgsStr(args []string) []string {
-	namedArgs := make([]string, 0, len(args))
-	for i := range args {
-		namedArgs = append(
-			namedArgs,
-			qb.CreateNamedParameter(
-				args[i],
-				enums.ParameterTypeString,
-				nil,
-			),
-		)
-	}
-	return namedArgs
-}
-
+// GetRootAliases returns the root aliases of the query
 func (qb *QueryBuilder[ResultType]) GetRootAliases() []string {
 	aliases := make([]string, 0)
 
@@ -1273,6 +1213,7 @@ func (qb *QueryBuilder[ResultType]) GetRootAliases() []string {
 	return aliases
 }
 
+// Exec executes the query
 func (qb *QueryBuilder[ResultType]) Exec() error {
 	gotSql, err := qb.GetSQL()
 	if err != nil {
@@ -1287,6 +1228,7 @@ func (qb *QueryBuilder[ResultType]) Exec() error {
 	return nil
 }
 
+// ExecScan scans the first row of the result set into the target variable
 func (qb *QueryBuilder[ResultType]) ExecScan(v any) error {
 	gotSql, err := qb.GetSQL()
 	if err != nil {
@@ -1301,13 +1243,14 @@ func (qb *QueryBuilder[ResultType]) ExecScan(v any) error {
 	return nil
 }
 
-func (qb *QueryBuilder[ResultType]) ExecScanCol(v any) error {
+// ExecScanCol scans the column of the first row of the result set into the target variable
+func (qb *QueryBuilder[ResultType]) ExecScanCol(target any) error {
 	gotSql, err := qb.GetSQL()
 	if err != nil {
 		return errors.WithStack(err)
 	}
 
-	err = qb.Db.Select(gotSql, qb.GetNamedArgs()).ScanCol(v).Exec(qb.ctx)
+	err = qb.Db.Select(gotSql, qb.GetNamedArgs()).ScanCol(target).Exec(qb.ctx)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -1315,16 +1258,18 @@ func (qb *QueryBuilder[ResultType]) ExecScanCol(v any) error {
 	return nil
 }
 
+// GetResult returns a result in the form of a ResultType slice
 func (qb *QueryBuilder[ResultType]) GetResult() ([]*ResultType, error) {
-	v := make([]ResultType, 0)
+	v := make([]*ResultType, 0)
 
 	if err := qb.ExecScan(&v); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.WithStack(err)
 	}
 
-	return smt.MapSlice(v, ptrs.AsPtr), nil
+	return v, nil
 }
 
+// GetOneOrNilResult reruns a result in the form of a ResultType
 func (qb *QueryBuilder[ResultType]) GetOneOrNilResult() (*ResultType, error) {
 	var v []ResultType
 
@@ -1347,10 +1292,8 @@ func (qb *QueryBuilder[ResultType]) GetOneOrNilResult() (*ResultType, error) {
 	return &v[0], nil
 }
 
-func (qb *QueryBuilder[ResultType]) GetOneOrNilLiteralResult() (
-	*ResultType,
-	error,
-) {
+// GetOneOrNilLiteralResult returns a literal result in the form of a ResultType
+func (qb *QueryBuilder[ResultType]) GetOneOrNilLiteralResult() (*ResultType, error) {
 	gotSql, err := qb.GetSQL()
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -1368,6 +1311,7 @@ func (qb *QueryBuilder[ResultType]) GetOneOrNilLiteralResult() (
 	return &v, nil
 }
 
+// GetLiteralResult returns a literal set of results in the form of a ResultType slice
 func (qb *QueryBuilder[ResultType]) GetLiteralResult() ([]ResultType, error) {
 	gotSql, err := qb.GetSQL()
 	if err != nil {
@@ -1392,22 +1336,4 @@ func (qb *QueryBuilder[ResultType]) GetLiteralResult() ([]ResultType, error) {
 	}
 
 	return v, nil
-}
-
-func (qb *QueryBuilder[ResultType]) ScanOneLiteralResult(target *ResultType) error {
-	if target == nil {
-		return errors.New("target is nil")
-	}
-
-	gotSql, err := qb.GetSQL()
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	err = qb.Db.Select(gotSql, qb.GetNamedArgs()).ScanCol(target).Exec(qb.ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	return nil
 }

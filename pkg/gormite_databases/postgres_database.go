@@ -5,12 +5,12 @@ import (
 	databaseSql "database/sql"
 	gdh "github.com/KoNekoD/gormite/pkg/gormite_databases_helpers"
 	"github.com/KoNekoD/pgx-colon-query-rewriter/pkg/pgxcqr"
-	"github.com/charmbracelet/log"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
+	"log"
 )
 
 type PostgresOptionFn func(o *PostgresDatabase)
@@ -44,7 +44,7 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 	}
 
 	onError := func(method string, err error, sql string, args ...any) {
-		log.Warn(err.Error(), "sql", sql, "args", args)
+		log.Printf("query error %v, sql %s, args %v\n", err, sql, args)
 	}
 
 	v := &PostgresDatabase{PgX: pgxPool, PgxConfig: config, pgxConn: pgxPool, onError: onError}

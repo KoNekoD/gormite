@@ -2,7 +2,6 @@ package local_schema
 
 import (
 	"fmt"
-	"github.com/KoNekoD/ptrs/pkg/ptrs"
 	"github.com/pkg/errors"
 	"strings"
 )
@@ -101,7 +100,8 @@ func applyMetadataMutatorsAfterColumnsIntrospection(bag *tableBag) error {
 		return errors.Errorf("primary key of table %s not found", bag.table.GetName())
 	}
 
-	bag.table.SetPrimaryKey(bag.primaryKeys, ptrs.AsPtr(fmt.Sprintf("%s_pkey", bag.table.GetName())))
+	pk := fmt.Sprintf("%s_pkey", bag.table.GetName())
+	bag.table.SetPrimaryKey(bag.primaryKeys, &pk)
 
 	return nil
 }

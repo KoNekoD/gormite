@@ -1,13 +1,13 @@
 package diff_calc
 
 import (
-	"github.com/KoNekoD/gormite/pkg/assets"
-	"github.com/KoNekoD/gormite/pkg/diff_dtos"
-	"github.com/KoNekoD/smt/pkg/smt"
-	"github.com/google/go-cmp/cmp"
+	"github.com/KoNekoD/gormite/pkg/utils"
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/KoNekoD/gormite/pkg/assets"
+	"github.com/KoNekoD/gormite/pkg/diff_dtos"
 )
 
 // Comparator - Compares two Schemas and return an instance of SchemaDiff.
@@ -50,15 +50,9 @@ func (c *Comparator) CompareSchemas(oldSchema, newSchema *assets.Schema) *diff_d
 	for _, newTable := range newSchema.GetTables() {
 		newTableName := newTable.GetShortestName(newSchema.GetName())
 		if !oldSchema.HasTable(newTableName) {
-			createdTables = append(
-				createdTables,
-				newSchema.GetTable(newTableName),
-			)
+			createdTables = append(createdTables, newSchema.GetTable(newTableName))
 		} else {
-			tableDiff := c.CompareTables(
-				oldSchema.GetTable(newTableName),
-				newSchema.GetTable(newTableName),
-			)
+			tableDiff := c.CompareTables(oldSchema.GetTable(newTableName), newSchema.GetTable(newTableName))
 
 			if !tableDiff.IsEmpty() {
 				alteredTables = append(alteredTables, tableDiff)
@@ -86,14 +80,8 @@ func (c *Comparator) CompareSchemas(oldSchema, newSchema *assets.Schema) *diff_d
 				createdSequences = append(createdSequences, newSequence)
 			}
 		} else {
-			if c.diffSequence(
-				newSequence,
-				oldSchema.GetSequence(newSequenceName),
-			) {
-				alteredSequences = append(
-					alteredSequences,
-					newSchema.GetSequence(newSequenceName),
-				)
+			if c.diffSequence(newSequence, oldSchema.GetSequence(newSequenceName)) {
+				alteredSequences = append(alteredSequences, newSchema.GetSequence(newSequenceName))
 			}
 		}
 	}
@@ -124,10 +112,7 @@ func (c *Comparator) CompareSchemas(oldSchema, newSchema *assets.Schema) *diff_d
 	)
 }
 
-func (c *Comparator) isAutoIncrementSequenceInSchema(
-	schema *assets.Schema,
-	sequence *assets.Sequence,
-) bool {
+func (c *Comparator) isAutoIncrementSequenceInSchema(schema *assets.Schema, sequence *assets.Sequence) bool {
 	for _, table := range schema.GetTables() {
 		if sequence.IsAutoIncrementsFor(table) {
 			return true
@@ -137,10 +122,7 @@ func (c *Comparator) isAutoIncrementSequenceInSchema(
 	return false
 }
 
-func (c *Comparator) diffSequence(
-	sequence1 *assets.Sequence,
-	sequence2 *assets.Sequence,
-) bool {
+func (c *Comparator) diffSequence(sequence1 *assets.Sequence, sequence2 *assets.Sequence) bool {
 	if sequence1.GetAllocationSize() != sequence2.GetAllocationSize() {
 		return true
 	}
@@ -164,7 +146,7 @@ func (c *Comparator) CompareTables(oldTable, newTable *assets.Table) *diff_dtos.
 	newColumns := newTable.GetColumns()
 
 	// See if all the columns in the old table exist in the new table
-	for _, newColumn := range newColumns {
+	for newColumn := range newColumns {
 		newColumnName := strings.ToLower(newColumn.GetName())
 
 		if oldTable.HasColumn(newColumnName) {
@@ -175,7 +157,7 @@ func (c *Comparator) CompareTables(oldTable, newTable *assets.Table) *diff_dtos.
 	}
 
 	// See if there are any removed columns in the new table
-	for _, oldColumn := range oldColumns {
+	for oldColumn := range oldColumns {
 		oldColumnName := strings.ToLower(oldColumn.GetName())
 		if !newTable.HasColumn(oldColumnName) {
 			droppedColumns[oldColumnName] = oldColumn
@@ -188,10 +170,7 @@ func (c *Comparator) CompareTables(oldTable, newTable *assets.Table) *diff_dtos.
 			continue
 		}
 
-		modifiedColumns[oldColumnName] = diff_dtos.NewColumnDiff(
-			oldColumn,
-			newColumn,
-		)
+		modifiedColumns[oldColumnName] = diff_dtos.NewColumnDiff(oldColumn, newColumn)
 	}
 
 	renamedColumnNames := newTable.GetRenamedColumns()
@@ -332,10 +311,7 @@ func (c *Comparator) detectRenamedColumns(
 			continue
 		}
 
-		modifiedColumns[oldColumnName] = diff_dtos.NewColumnDiff(
-			oldColumn,
-			newColumn,
-		)
+		modifiedColumns[oldColumnName] = diff_dtos.NewColumnDiff(oldColumn, newColumn)
 
 		delete(addedColumns, addedColumnName)
 		delete(removedColumns, oldColumnName)
@@ -389,21 +365,18 @@ func (c *Comparator) detectRenamedIndexes(
 	return renamedIndexes
 }
 
-func (c *Comparator) diffForeignKey(
-	key1 *assets.ForeignKeyConstraint,
-	key2 *assets.ForeignKeyConstraint,
-) bool {
+func (c *Comparator) diffForeignKey(key1 *assets.ForeignKeyConstraint, key2 *assets.ForeignKeyConstraint) bool {
 	same := slices.Equal(
-		smt.MapSlice(key1.GetUnquotedLocalColumns(), strings.ToLower),
-		smt.MapSlice(key2.GetUnquotedLocalColumns(), strings.ToLower),
+		utils.ToLowerList(key1.GetUnquotedLocalColumns()),
+		utils.ToLowerList(key2.GetUnquotedLocalColumns()),
 	)
 	if !same {
 		return true
 	}
 
 	same = slices.Equal(
-		smt.MapSlice(key1.GetUnquotedForeignColumns(), strings.ToLower),
-		smt.MapSlice(key2.GetUnquotedForeignColumns(), strings.ToLower),
+		utils.ToLowerList(key1.GetUnquotedForeignColumns()),
+		utils.ToLowerList(key2.GetUnquotedForeignColumns()),
 	)
 	if !same {
 		return true
@@ -413,11 +386,11 @@ func (c *Comparator) diffForeignKey(
 		return true
 	}
 
-	if cmp.Equal(key1.OnUpdate(), key2.OnUpdate()) == false {
+	if !utils.EqualStringPtr(key1.OnUpdate(), key2.OnUpdate()) {
 		return true
 	}
 
-	if cmp.Equal(key1.OnDelete(), key2.OnDelete()) == false {
+	if !utils.EqualStringPtr(key1.OnDelete(), key2.OnDelete()) {
 		return true
 	}
 
@@ -425,19 +398,13 @@ func (c *Comparator) diffForeignKey(
 }
 
 // columnsEqual - Compares the definitions of the given columns
-func (c *Comparator) columnsEqual(
-	column1 *assets.Column,
-	column2 *assets.Column,
-) bool {
+func (c *Comparator) columnsEqual(column1 *assets.Column, column2 *assets.Column) bool {
 	return c.platform.ColumnsEqual(column1, column2)
 }
 
 // diffIndex - Finds the difference between the indexes $index1 and $index2.
 // Compares index1 with index2 and returns true if there are any
 // differences or false in case there are no differences.
-func (c *Comparator) diffIndex(
-	index1 *assets.Index,
-	index2 *assets.Index,
-) bool {
+func (c *Comparator) diffIndex(index1 *assets.Index, index2 *assets.Index) bool {
 	return !(index1.IsFulfilledBy(index2) && index2.IsFulfilledBy(index1))
 }
