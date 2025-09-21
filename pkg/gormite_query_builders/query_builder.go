@@ -826,6 +826,15 @@ func (qb *QueryBuilder[ResultType]) PrepareInArgsInt(args []int) []string {
 	return namedArgs
 }
 
+// PrepareInArgsStr creates string named parameters for the IN clause of the query
+func (qb *QueryBuilder[ResultType]) PrepareInArgsStr(args []string) []string {
+	namedArgs := make([]string, 0, len(args))
+	for i := range args {
+		namedArgs = append(namedArgs, qb.CreateNamedParameter(args[i], enums.ParameterTypeString))
+	}
+	return namedArgs
+}
+
 // GetRootAliases returns the root aliases of the query
 func (qb *QueryBuilder[ResultType]) GetRootAliases() []string {
 	aliases := make([]string, 0)
