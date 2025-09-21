@@ -1,11 +1,10 @@
 package local_schema
 
 import (
-	"fmt"
 	"github.com/KoNekoD/gormite/pkg/assets"
 	"github.com/KoNekoD/gormite/pkg/types"
 	"github.com/KoNekoD/ptrs/pkg/ptrs"
-	"github.com/fatih/structtag"
+	"github.com/pkg/errors"
 	"go/ast"
 	"slices"
 	"strconv"
@@ -28,11 +27,8 @@ const (
 	scaleTagName                     = "scale"
 )
 
-func (t *tableBag) parseColumnTags(
-	tags *structtag.Tags,
-	fieldType *ast.Ident,
-	objectsKeys []string,
-) *columnData {
+func (t *tableBag) parseColumnTags(fieldType *ast.Ident, objectsKeys []string) (*columnData, error) {
+	tags := t.currentFieldTags
 	typeName := fieldType.Name
 
 	colNameTag, _ := tags.Get(columnTagName)
@@ -113,10 +109,7 @@ func (t *tableBag) parseColumnTags(
 		case "jsonb":
 			typeName = "jsonb"
 			columnType = types.NewJsonType()
-			options = append(
-				options,
-				func(c *assets.Column) { c.SetPlatformOption("jsonb", true) },
-			)
+			options = append(options, func(c *assets.Column) { c.SetPlatformOption("jsonb", true) })
 		case "integer":
 			columnType = types.NewIntegerType()
 		case "bigint":
@@ -126,18 +119,12 @@ func (t *tableBag) parseColumnTags(
 			precisionTag, _ := tags.Get(precisionTagName)
 			if precisionTag != nil {
 				precisionTagValue, _ := strconv.Atoi(precisionTag.Value())
-				options = append(
-					options,
-					func(c *assets.Column) { c.SetPrecision(precisionTagValue) },
-				)
+				options = append(options, func(c *assets.Column) { c.SetPrecision(precisionTagValue) })
 			}
 			scaleTag, _ := tags.Get(scaleTagName)
 			if scaleTag != nil {
 				scaleTagValue, _ := strconv.Atoi(scaleTag.Value())
-				options = append(
-					options,
-					func(c *assets.Column) { c.SetScale(scaleTagValue) },
-				)
+				options = append(options, func(c *assets.Column) { c.SetScale(scaleTagValue) })
 			}
 
 		case "float":
@@ -145,14 +132,7 @@ func (t *tableBag) parseColumnTags(
 		case "smallfloat":
 			columnType = types.NewSmallFloatType()
 		default:
-			panic(
-				fmt.Sprintf(
-					"unknown tag type %s for type %s on table %s",
-					typeTagValue,
-					typeName,
-					t.table.GetName(),
-				),
-			)
+			return nil, errors.Errorf("unknown type tag value %s", typeTagValue)
 		}
 	}
 	if columnType == nil {
@@ -203,6 +183,7 @@ func (t *tableBag) parseColumnTags(
 		Length:            length,
 		DefaultValue:      defaultValue,
 		ColumnType:        columnType,
+		HasTypeTag:        typeTag != nil,
 		Options:           options,
-	}
+	}, nil
 }

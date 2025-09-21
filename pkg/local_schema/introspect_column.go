@@ -30,6 +30,7 @@ type columnData struct {
 	DefaultValue *string
 
 	ColumnType types.AbstractTypeInterface
+	HasTypeTag bool
 
 	Options []assets.ColumnOption
 }

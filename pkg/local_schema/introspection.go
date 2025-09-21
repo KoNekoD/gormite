@@ -9,12 +9,12 @@ import (
 	"slices"
 )
 
-func (s *store) introspectTables() (err error) {
+func (s *store) introspectTables() error {
 	keys := maps.Keys(s.objectsMap)
 	slices.Sort(keys)
 
 	for _, objectName := range keys {
-		if err = handleMappingObject(objectName, s); err != nil {
+		if err := handleMappingObject(objectName, s); err != nil {
 			return errors.WithStack(err)
 		}
 	}

@@ -1,10 +1,10 @@
 package local_schema
 
 import (
-	"fmt"
 	"github.com/KoNekoD/gormite/pkg/assets"
 	"github.com/KoNekoD/gormite/pkg/types"
 	"github.com/fatih/structtag"
+	"github.com/pkg/errors"
 	"go/ast"
 	"golang.org/x/exp/maps"
 	"slices"
@@ -37,6 +37,10 @@ type tableBag struct {
 
 	indexColumnsMap    map[string][]string
 	indexConditionsMap map[string]string
+
+	// Current column name level
+	currentFieldName string
+	currentFieldTags *structtag.Tags
 }
 
 func newTableBag(store *store, table *assets.Table) *tableBag {
@@ -53,125 +57,120 @@ func newTableBag(store *store, table *assets.Table) *tableBag {
 	return bag
 }
 
-func (t *tableBag) colIdent(fieldType *ast.Ident, tags *structtag.Tags) {
+func (t *tableBag) colIdent(fieldType *ast.Ident, nillable bool) error {
 	objectsKeys := maps.Keys(t.store.objectsMap)
 
-	columnTagsData := t.parseColumnTags(tags, fieldType, objectsKeys)
+	columnTagsData, err := t.parseColumnTags(fieldType, objectsKeys)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse column tags")
+	}
+
+	if !columnTagsData.IsForeignKey && !columnTagsData.IsNotNull != nillable {
+		return errors.Errorf("column %s nullable mismatch", columnTagsData.ColumnName)
+	}
+	if columnTagsData.IsForeignKey && !nillable {
+		return errors.Errorf("column %s must be nullable", columnTagsData.ColumnName)
+	}
 
 	if columnTagsData.ColumnType != nil {
-		t.table.AddColumn(
-			columnTagsData.ColumnName,
-			columnTagsData.ColumnType,
-			columnTagsData.Options...,
-		)
+		t.table.AddColumn(columnTagsData.ColumnName, columnTagsData.ColumnType, columnTagsData.Options...)
 	} else {
 		if !columnTagsData.IsForeignKey {
-			panic(fmt.Sprintf("unknown type %s", columnTagsData.TypeName))
+			return errors.Errorf("unknown type %s", columnTagsData.TypeName)
 		}
 
 		// Maybe we need rewrite it to allow use non integer ids...
-		t.table.AddColumn(
-			columnTagsData.ColumnName,
-			types.NewIntegerType(),
-			columnTagsData.Options...,
-		)
+		t.table.AddColumn(columnTagsData.ColumnName, types.NewIntegerType(), columnTagsData.Options...)
 	}
 
-	applyMetadataMutatorsForNewColumn(columnTagsData, t)
+	return t.finalizeColumn(columnTagsData)
 }
 
-func (t *tableBag) colSel(
-	fType *ast.SelectorExpr,
-	tags *structtag.Tags,
-	mustBeNullable bool,
-) {
+func (t *tableBag) finalizeColumn(columnTagsData *columnData) error {
+	err := applyMetadataMutatorsForNewColumn(columnTagsData, t)
+	if err != nil {
+		return errors.Wrapf(err, "finalize column %s failed", columnTagsData.ColumnName)
+	}
+
+	return nil
+}
+
+func (t *tableBag) colSel(fType *ast.SelectorExpr, nillable bool) error {
 	objectsKeys := maps.Keys(t.store.objectsMap)
 
 	selPackage := fType.X.(*ast.Ident).Name
 	selType := fType.Sel.Name
 
-	columnTagsData := t.parseColumnTags(tags, fType.Sel, objectsKeys)
-
-	if selPackage == "time" && selType == "Time" {
-		t.table.AddColumn(
-			columnTagsData.ColumnName,
-			types.NewDateTimeImmutableType(),
-			columnTagsData.Options...,
-		)
-		applyMetadataMutatorsForNewColumn(columnTagsData, t)
-		return
+	columnTagsData, err := t.parseColumnTags(fType.Sel, objectsKeys)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse column tags")
 	}
 
-	if mustBeNullable && columnTagsData.IsNotNull {
-		panic("column " + columnTagsData.ColumnName + " of table " + t.table.GetName() + " cannot be not null")
+	if selPackage == "time" && selType == "Time" {
+		t.table.AddColumn(columnTagsData.ColumnName, types.NewDateTimeImmutableType(), columnTagsData.Options...)
+		return t.finalizeColumn(columnTagsData)
 	}
 
 	if columnTagsData.ColumnType != nil {
-		t.table.AddColumn(
-			columnTagsData.ColumnName,
-			columnTagsData.ColumnType,
-			columnTagsData.Options...,
-		)
-		applyMetadataMutatorsForNewColumn(columnTagsData, t)
-	} else {
-		if found, ok := t.store.structNamesIdentsMap[selType]; ok {
-			t.colIdent(found, tags)
-		} else {
-			panic("unknown type for " + columnTagsData.ColumnName)
-		}
+		t.table.AddColumn(columnTagsData.ColumnName, columnTagsData.ColumnType, columnTagsData.Options...)
+		return t.finalizeColumn(columnTagsData)
 	}
+
+	if found, ok := t.store.structNamesIdentsMap[selType]; ok {
+		return t.colIdent(found, nillable)
+	}
+
+	return errors.Errorf("unknown type for %s", columnTagsData.ColumnName)
 }
 
-func (t *tableBag) colStar(fType *ast.StarExpr, tags *structtag.Tags) {
+func (t *tableBag) colStar(fType *ast.StarExpr) error {
 	switch fieldTypeX := fType.X.(type) {
 	case *ast.Ident:
-		t.colIdent(fieldTypeX, tags)
+		return t.colIdent(fieldTypeX, true)
 	case *ast.SelectorExpr:
-		t.colSel(
-			fieldTypeX,
-			tags,
-			true,
-		) // TODO: must be nullable fool protection not work, idk why
+		return t.colSel(fieldTypeX, true)
 	default:
-		panic(fmt.Sprintf("Unknown star %T", fieldTypeX))
+		return errors.Errorf("unknown star type %T", fieldTypeX)
 	}
 }
 
-func (t *tableBag) colArray(fieldType *ast.ArrayType, tags *structtag.Tags) {
+func (t *tableBag) colArray(fieldType *ast.ArrayType) error {
 	objectsKeys := maps.Keys(t.store.objectsMap)
 
 	ident, ok := fieldType.Elt.(*ast.Ident)
 	if !ok {
-		panic("Only primitive array types are supported")
+		return errors.Errorf("only literal array types are supported")
 	}
 
-	if ident.Name != "string" {
-		panic("Array type is not supported for type: " + ident.Name)
+	// TODO: Refactor for others literals support
+
+	allowedFieldTypes := []string{"string"}
+
+	if !slices.Contains(allowedFieldTypes, ident.Name) {
+		return errors.Errorf("slice type only allowed for %s", allowedFieldTypes)
 	}
 
-	columnTagsData := t.parseColumnTags(tags, ident, objectsKeys)
-
-	if "string" == columnTagsData.TypeName {
-		panic("please add type tag to string array for property: " + columnTagsData.ColumnName)
+	columnTagsData, err := t.parseColumnTags(ident, objectsKeys)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse column tags")
 	}
 
-	if !slices.Contains([]string{"json", "jsonb"}, columnTagsData.TypeName) {
-		panic("Only json/jsonb array types are supported")
+	allowedTypes := []string{"json", "jsonb"}
+
+	if !columnTagsData.HasTypeTag {
+		return errors.Errorf("type tag is required for %s, allowed: %s", columnTagsData.ColumnName, allowedTypes)
 	}
 
-	t.table.AddColumn(
-		columnTagsData.ColumnName,
-		columnTagsData.ColumnType,
-		columnTagsData.Options...,
-	)
+	if !slices.Contains(allowedTypes, columnTagsData.TypeName) {
+		return errors.Errorf("type tag only allowed for %s", allowedTypes)
+	}
+
+	t.table.AddColumn(columnTagsData.ColumnName, columnTagsData.ColumnType, columnTagsData.Options...)
+
+	return nil
 }
 
-// OneToOne - uniq_cd4f5a305067c3d4
-// OneToMany - virtual, not owner
-// ManyToOne - idx_79bd4a955067c3d4
-// ManyToMany - table1_table2_pkey, idx_f9cb7c79afc2b591, idx_f9cb7c79810212b - create separate table
-
-func handleMappingObject(objectName string, store *store) (err error) {
+func handleMappingObject(objectName string, store *store) error {
 	t := store.newTable(objectName)
 
 	object := store.objectsMap[objectName]
@@ -182,29 +181,45 @@ func handleMappingObject(objectName string, store *store) (err error) {
 	bag := newTableBag(store, t)
 
 	for _, field := range structType.Fields.List {
-		tag := field.Tag.Value
-		tag = strings.Trim(field.Tag.Value, "`")
-
-		tags, err := structtag.Parse(tag)
-		if err != nil {
-			panic(err)
+		if len(field.Names) != 1 {
+			return errors.New("only single field names are supported")
 		}
+
+		var tags *structtag.Tags
+		var err error
+
+		if field.Tag != nil {
+			tag := strings.Trim(field.Tag.Value, "`")
+			tags, err = structtag.Parse(tag)
+			if err != nil {
+				return errors.Wrap(err, "failed to parse tags")
+			}
+		}
+		bag.currentFieldName = field.Names[0].Name
+		bag.currentFieldTags = tags
 
 		switch fType := field.Type.(type) {
 		case *ast.Ident:
-			bag.colIdent(fType, tags)
+			err = bag.colIdent(fType, false)
 		case *ast.StarExpr:
-			bag.colStar(fType, tags)
+			err = bag.colStar(fType)
 		case *ast.SelectorExpr:
-			bag.colSel(fType, tags, false)
+			err = bag.colSel(fType, false)
 		case *ast.ArrayType:
-			bag.colArray(fType, tags)
+			err = bag.colArray(fType)
 		default:
-			panic(fmt.Sprintf("Unknown fieldType %T", fType))
+			return errors.Errorf("unknown type %T of table %s", fType, bag.table.GetName())
+		}
+
+		if err != nil {
+			return errors.Wrapf(err, "failed to handle field %s of table %s", field.Names[0].Name, bag.table.GetName())
 		}
 	}
 
-	applyMetadataMutatorsAfterColumnsIntrospection(bag)
+	err := applyMetadataMutatorsAfterColumnsIntrospection(bag)
+	if err != nil {
+		return errors.Wrapf(err, "failed to finalize table %s", bag.table.GetName())
+	}
 
 	return nil
 }

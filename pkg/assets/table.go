@@ -591,10 +591,8 @@ func (t *Table) addIndex(indexCandidate *Index) *Table {
 	}
 
 	_, hasIndex := t.indexes[indexName]
-	if hasIndex && !slices.Contains(
-		replacedImplicitIndexes,
-		indexName,
-	) || t.primaryKeyName != nil && indexCandidate.IsPrimary() {
+	if hasIndex && !slices.Contains(replacedImplicitIndexes, indexName) ||
+		t.primaryKeyName != nil && indexCandidate.IsPrimary() {
 		panic("index " + indexName + " already exists")
 	}
 

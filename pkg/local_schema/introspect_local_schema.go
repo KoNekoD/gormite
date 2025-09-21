@@ -27,10 +27,5 @@ func IntrospectLocalSchema(path string) (*assets.Schema, error) {
 
 	s.introspectSequences()
 
-	return assets.NewSchema(
-		s.tables,
-		s.sequences,
-		s.schemaConfig,
-		s.namespaces,
-	), nil
+	return assets.NewSchema(s.tables, s.sequences, s.schemaConfig, s.namespaces), nil
 }

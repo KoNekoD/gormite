@@ -3,13 +3,11 @@ package local_schema
 import (
 	"fmt"
 	"github.com/KoNekoD/ptrs/pkg/ptrs"
+	"github.com/pkg/errors"
 	"strings"
 )
 
-func applyMetadataMutatorsForNewColumn(
-	columnTagsData *columnData,
-	bag *tableBag,
-) {
+func applyMetadataMutatorsForNewColumn(columnTagsData *columnData, bag *tableBag) error {
 	if columnTagsData.IsForeignKey {
 		options := map[string]any{}
 		if columnTagsData.OnUpdate != nil {
@@ -19,13 +17,8 @@ func applyMetadataMutatorsForNewColumn(
 			options["onDelete"] = columnTagsData.OnDelete
 		}
 
-		bag.table.AddForeignKeyConstraint(
-			getName(bag.store, columnTagsData.TypeName),
-			[]string{columnTagsData.ColumnName},
-			[]string{"id"},
-			options,
-			nil,
-		)
+		name := getName(bag.store, columnTagsData.TypeName)
+		bag.table.AddForeignKeyConstraint(name, []string{columnTagsData.ColumnName}, []string{"id"}, options, nil)
 	}
 
 	if columnTagsData.IsPrimaryKey {
@@ -39,10 +32,7 @@ func applyMetadataMutatorsForNewColumn(
 			if _, hasUniqMapKey := bag.uniqColumnsMap[uniqNameItem]; !hasUniqMapKey {
 				bag.uniqColumnsMap[uniqNameItem] = make([]string, 0)
 			}
-			bag.uniqColumnsMap[uniqNameItem] = append(
-				bag.uniqColumnsMap[uniqNameItem],
-				columnTagsData.ColumnName,
-			)
+			bag.uniqColumnsMap[uniqNameItem] = append(bag.uniqColumnsMap[uniqNameItem], columnTagsData.ColumnName)
 		}
 	}
 
@@ -51,7 +41,7 @@ func applyMetadataMutatorsForNewColumn(
 		for _, condition := range conditions {
 			conditionParts := strings.Split(condition, ":")
 			if len(conditionParts) != 2 {
-				panic(fmt.Sprintf("invalid uniq condition %s", condition))
+				return errors.Errorf("invalid uniq condition %s", condition)
 			}
 
 			bag.uniqConditionsMap[conditionParts[0]] = conditionParts[1]
@@ -65,10 +55,7 @@ func applyMetadataMutatorsForNewColumn(
 			if _, hasIndexMapKey := bag.indexColumnsMap[indexNameItem]; !hasIndexMapKey {
 				bag.indexColumnsMap[indexNameItem] = make([]string, 0)
 			}
-			bag.indexColumnsMap[indexNameItem] = append(
-				bag.indexColumnsMap[indexNameItem],
-				columnTagsData.ColumnName,
-			)
+			bag.indexColumnsMap[indexNameItem] = append(bag.indexColumnsMap[indexNameItem], columnTagsData.ColumnName)
 		}
 	}
 
@@ -77,15 +64,17 @@ func applyMetadataMutatorsForNewColumn(
 		for _, condition := range conditions {
 			conditionParts := strings.Split(condition, ":")
 			if len(conditionParts) != 2 {
-				panic(fmt.Sprintf("invalid index condition %s", condition))
+				return errors.Errorf("invalid index condition %s", condition)
 			}
 
 			bag.indexConditionsMap[conditionParts[0]] = conditionParts[1]
 		}
 	}
+
+	return nil
 }
 
-func applyMetadataMutatorsAfterColumnsIntrospection(bag *tableBag) {
+func applyMetadataMutatorsAfterColumnsIntrospection(bag *tableBag) error {
 	for indexName, columns := range bag.indexColumnsMap {
 		options := make(map[string]any)
 
@@ -97,11 +86,7 @@ func applyMetadataMutatorsAfterColumnsIntrospection(bag *tableBag) {
 	}
 
 	for uniqPseudoName, columns := range bag.uniqColumnsMap {
-		uniqIdxName := fmt.Sprintf(
-			"idx__%s__%s__uniq",
-			bag.table.GetName(),
-			strings.Join(columns, "_"),
-		)
+		uniqIdxName := fmt.Sprintf("idx__%s__%s__uniq", bag.table.GetName(), strings.Join(columns, "_"))
 
 		options := make(map[string]any)
 
@@ -112,8 +97,11 @@ func applyMetadataMutatorsAfterColumnsIntrospection(bag *tableBag) {
 		bag.table.AddUniqueIndex(columns, &uniqIdxName, options)
 	}
 
-	bag.table.SetPrimaryKey(
-		bag.primaryKeys,
-		ptrs.AsPtr(fmt.Sprintf("%s_pkey", bag.table.GetName())),
-	)
+	if len(bag.primaryKeys) == 0 {
+		return errors.Errorf("primary key of table %s not found", bag.table.GetName())
+	}
+
+	bag.table.SetPrimaryKey(bag.primaryKeys, ptrs.AsPtr(fmt.Sprintf("%s_pkey", bag.table.GetName())))
+
+	return nil
 }

@@ -61,7 +61,7 @@ func (s *store) collectMappingKeyFileAst(fileName string, fileData *ast.File) er
 		s.objectsMap[objectName] = object
 
 		if _, ok := s.structNamesIdentsMap[objectName]; ok {
-			panic("duplicate struct " + objectName)
+			return errors.Errorf("duplicate struct %s", objectName)
 		}
 		s.structNamesIdentsMap[object.Name] = object.Decl.(*ast.TypeSpec).Name
 	}
