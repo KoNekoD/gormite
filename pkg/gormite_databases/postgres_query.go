@@ -4,11 +4,12 @@ import (
 	"context"
 	databaseSql "database/sql"
 	gdh "github.com/KoNekoD/gormite/pkg/gormite_databases_helpers"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 )
 
 type PostgresQuery struct {
-	db      PgXWrappedDatabase
+	db      *pgxpool.Pool
 	onError func(method string, err error, sql string, args ...any)
 
 	sql       string

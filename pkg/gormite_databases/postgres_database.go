@@ -7,7 +7,6 @@ import (
 	"github.com/KoNekoD/pgx-colon-query-rewriter/pkg/pgxcqr"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 	"log"
@@ -19,16 +18,10 @@ func PostgresWithOnError(onError func(method string, err error, sql string, args
 	return func(o *PostgresDatabase) { o.onError = onError }
 }
 
-type PgXWrappedDatabase interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-}
-
 type PostgresDatabase struct {
-	PgX       PgXWrappedDatabase
-	PgxConfig *pgxpool.Config
+	pgx       *pgxpool.Pool
+	pgxConfig *pgxpool.Config
 
-	pgxConn *pgxpool.Pool
 	onError func(method string, err error, sql string, args ...any)
 }
 
@@ -47,7 +40,7 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 		log.Printf("query error %v, sql %s, args %v\n", err, sql, args)
 	}
 
-	v := &PostgresDatabase{PgX: pgxPool, PgxConfig: config, pgxConn: pgxPool, onError: onError}
+	v := &PostgresDatabase{pgx: pgxPool, pgxConfig: config, onError: onError}
 
 	for _, opt := range opts {
 		opt(v)
@@ -56,30 +49,15 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 	return v
 }
 
-func (d *PostgresDatabase) WrapInTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+func (d *PostgresDatabase) WrapInTransaction(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	opts := pgx.TxOptions{IsoLevel: pgx.ReadCommitted}
 
-	var (
-		tx  pgx.Tx
-		err error
-	)
-
-	switch p := d.PgX.(type) {
-	case *pgxpool.Pool:
-		tx, err = p.BeginTx(ctx, opts)
-	case pgx.Tx:
-		tx, err = p.Begin(ctx)
-	}
-
+	tx, err := d.pgx.BeginTx(ctx, opts)
 	if err != nil {
 		return errors.Wrap(err, "failed to begin transaction")
 	}
 
-	orig := d.PgX
-	d.PgX = tx
-	defer func() { d.PgX = orig }()
-
-	if err = fn(ctx); err != nil {
+	if err = fn(ctx, tx); err != nil {
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
 			return multierror.Append(err, errors.Wrap(rollbackErr, "failed to rollback transaction"))
 		}
@@ -95,15 +73,15 @@ func (d *PostgresDatabase) WrapInTransaction(ctx context.Context, fn func(ctx co
 }
 
 func (d *PostgresDatabase) Select(sql string, args ...any) gdh.QueryInterface {
-	return &PostgresQuery{db: d.PgX, sql: sql, args: args, onError: d.onError}
+	return &PostgresQuery{db: d.pgx, sql: sql, args: args, onError: d.onError}
 }
 
 func (d *PostgresDatabase) Get(sql string, args ...any) gdh.QueryInterface {
-	return &PostgresQuery{db: d.PgX, sql: sql, args: args, scanFirst: true, onError: d.onError}
+	return &PostgresQuery{db: d.pgx, sql: sql, args: args, scanFirst: true, onError: d.onError}
 }
 
 func (d *PostgresDatabase) Exec(ctx context.Context, sql string, args ...any) (gdh.CommandTag, error) {
-	tag, err := d.PgX.Exec(ctx, sql, args...)
+	tag, err := d.pgx.Exec(ctx, sql, args...)
 
 	if err != nil && !errors.Is(err, databaseSql.ErrNoRows) {
 		d.onError("Exec", err, trimSQL(sql), args...)
@@ -113,7 +91,7 @@ func (d *PostgresDatabase) Exec(ctx context.Context, sql string, args ...any) (g
 }
 
 func (d *PostgresDatabase) Query(ctx context.Context, sql string, args ...any) (gdh.Rows, error) {
-	rows, err := d.PgX.Query(ctx, sql, args...)
+	rows, err := d.pgx.Query(ctx, sql, args...)
 
 	if err != nil && !errors.Is(err, databaseSql.ErrNoRows) {
 		d.onError("Query", err, trimSQL(sql), args...)
@@ -126,6 +104,14 @@ func (d *PostgresDatabase) GetNamedArgs(args any) any {
 	return pgxcqr.NamedArgs(args.(map[string]any))
 }
 
+func (d *PostgresDatabase) GetPgx() *pgxpool.Pool {
+	return d.pgx
+}
+
+func (d *PostgresDatabase) GetPgxConfig() *pgxpool.Config {
+	return d.pgxConfig
+}
+
 func (d *PostgresDatabase) Destruct() {
-	d.pgxConn.Close()
+	d.pgx.Close()
 }
