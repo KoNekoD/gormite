@@ -7,6 +7,7 @@ import (
 	"github.com/KoNekoD/pgx-colon-query-rewriter/pkg/pgxcqr"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 	"log"
@@ -18,10 +19,16 @@ func PostgresWithOnError(onError func(method string, err error, sql string, args
 	return func(o *PostgresDatabase) { o.onError = onError }
 }
 
+type PgXWrappedDatabase interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
 type PostgresDatabase struct {
-	pgx       *pgxpool.Pool
+	pgx       PgXWrappedDatabase
 	pgxConfig *pgxpool.Config
 
+	pgxConn *pgxpool.Pool
 	onError func(method string, err error, sql string, args ...any)
 }
 
@@ -40,7 +47,7 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 		log.Printf("query error %v, sql %s, args %v\n", err, sql, args)
 	}
 
-	v := &PostgresDatabase{pgx: pgxPool, pgxConfig: config, onError: onError}
+	v := &PostgresDatabase{pgx: pgxPool, pgxConfig: config, pgxConn: pgxPool, onError: onError}
 
 	for _, opt := range opts {
 		opt(v)
@@ -49,10 +56,24 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 	return v
 }
 
-func (d *PostgresDatabase) WrapInTransaction(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
+func (d *PostgresDatabase) WrapInTransaction(
+	ctx context.Context,
+	fn func(ctx context.Context, tx PgXWrappedDatabase) error,
+) error {
 	opts := pgx.TxOptions{IsoLevel: pgx.ReadCommitted}
 
-	tx, err := d.pgx.BeginTx(ctx, opts)
+	var (
+		tx  pgx.Tx
+		err error
+	)
+
+	switch p := d.pgx.(type) {
+	case *pgxpool.Pool:
+		tx, err = p.BeginTx(ctx, opts)
+	case pgx.Tx:
+		tx, err = p.Begin(ctx)
+	}
+
 	if err != nil {
 		return errors.Wrap(err, "failed to begin transaction")
 	}
@@ -104,8 +125,17 @@ func (d *PostgresDatabase) GetNamedArgs(args any) any {
 	return pgxcqr.NamedArgs(args.(map[string]any))
 }
 
-func (d *PostgresDatabase) GetPgx() *pgxpool.Pool {
+func (d *PostgresDatabase) GetPgx() PgXWrappedDatabase {
 	return d.pgx
+}
+
+func (d *PostgresDatabase) WithPgx(pgx PgXWrappedDatabase) *PostgresDatabase {
+	return &PostgresDatabase{
+		pgx:       pgx,
+		pgxConfig: d.pgxConfig,
+		pgxConn:   d.pgxConn,
+		onError:   d.onError,
+	}
 }
 
 func (d *PostgresDatabase) GetPgxConfig() *pgxpool.Config {
@@ -113,5 +143,5 @@ func (d *PostgresDatabase) GetPgxConfig() *pgxpool.Config {
 }
 
 func (d *PostgresDatabase) Destruct() {
-	d.pgx.Close()
+	d.pgxConn.Close()
 }
