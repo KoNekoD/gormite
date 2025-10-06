@@ -44,18 +44,17 @@ func (m mockPostgresDatabase) GetNamedArgs(args any) any {
 }
 
 func TestDiffRunnerTest(t *testing.T) {
-	d := &gormite_databases.PostgresDatabase{}
+	ctx := context.Background()
+	d := &gormite_databases.Postgres{}
 
 	p := postgres_platform.NewPostgreSQLPlatform()
 
-	manager := postgres_schema_manager.NewPostgreSQLSchemaManager(
-		platforms.NewConnection(
-			d,
-			postgres_platform.NewPostgreSQLPlatform(),
-		), p,
-	)
+	manager := postgres_schema_manager.NewPostgreSQLSchemaManager(platforms.NewConnection(d, p), p)
 
-	oldSchema := manager.IntrospectSchema()
+	oldSchema, err := manager.IntrospectSchema(ctx)
+	if err != nil {
+		panic(errors.Wrap(err, "failed to introspect remote schema"))
+	}
 
 	newSchema, err := local_schema.IntrospectLocalSchema("resources/gormite.yaml")
 	if err != nil {

@@ -13,10 +13,10 @@ import (
 	"log"
 )
 
-type PostgresOptionFn func(o *PostgresDatabase)
+type PostgresOptionFn func(o *Postgres)
 
 func PostgresWithOnError(onError func(method string, err error, sql string, args ...any)) PostgresOptionFn {
-	return func(o *PostgresDatabase) { o.onError = onError }
+	return func(o *Postgres) { o.onError = onError }
 }
 
 type PgXWrappedDatabase interface {
@@ -24,7 +24,7 @@ type PgXWrappedDatabase interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-type PostgresDatabase struct {
+type Postgres struct {
 	pgx       PgXWrappedDatabase
 	pgxConfig *pgxpool.Config
 
@@ -32,7 +32,7 @@ type PostgresDatabase struct {
 	onError func(method string, err error, sql string, args ...any)
 }
 
-func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOptionFn) *PostgresDatabase {
+func NewPostgres(ctx context.Context, dsn string, opts ...PostgresOptionFn) *Postgres {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		log.Fatalf("Cannot parse config: %v\n", err)
@@ -47,7 +47,7 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 		log.Printf("query error %v, sql %s, args %v\n", err, sql, args)
 	}
 
-	v := &PostgresDatabase{pgx: pgxPool, pgxConfig: config, pgxConn: pgxPool, onError: onError}
+	v := &Postgres{pgx: pgxPool, pgxConfig: config, pgxConn: pgxPool, onError: onError}
 
 	for _, opt := range opts {
 		opt(v)
@@ -56,10 +56,7 @@ func NewPostgresDatabase(ctx context.Context, dsn string, opts ...PostgresOption
 	return v
 }
 
-func (d *PostgresDatabase) WrapInTransaction(
-	ctx context.Context,
-	fn func(ctx context.Context, tx PgXWrappedDatabase) error,
-) error {
+func (d *Postgres) WrapInTransaction(ctx context.Context, fn func(ctx context.Context, db *Postgres) error) error {
 	opts := pgx.TxOptions{IsoLevel: pgx.ReadCommitted}
 
 	var (
@@ -78,7 +75,9 @@ func (d *PostgresDatabase) WrapInTransaction(
 		return errors.Wrap(err, "failed to begin transaction")
 	}
 
-	if err = fn(ctx, tx); err != nil {
+	db := &Postgres{pgx: tx, pgxConfig: d.pgxConfig, pgxConn: d.pgxConn, onError: d.onError}
+
+	if err = fn(ctx, db); err != nil {
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
 			return multierror.Append(err, errors.Wrap(rollbackErr, "failed to rollback transaction"))
 		}
@@ -93,15 +92,15 @@ func (d *PostgresDatabase) WrapInTransaction(
 	return nil
 }
 
-func (d *PostgresDatabase) Select(sql string, args ...any) gdh.QueryInterface {
+func (d *Postgres) Select(sql string, args ...any) gdh.QueryInterface {
 	return &PostgresQuery{db: d.pgx, sql: sql, args: args, onError: d.onError}
 }
 
-func (d *PostgresDatabase) Get(sql string, args ...any) gdh.QueryInterface {
+func (d *Postgres) Get(sql string, args ...any) gdh.QueryInterface {
 	return &PostgresQuery{db: d.pgx, sql: sql, args: args, scanFirst: true, onError: d.onError}
 }
 
-func (d *PostgresDatabase) Exec(ctx context.Context, sql string, args ...any) (gdh.CommandTag, error) {
+func (d *Postgres) Exec(ctx context.Context, sql string, args ...any) (gdh.CommandTag, error) {
 	tag, err := d.pgx.Exec(ctx, sql, args...)
 
 	if err != nil && !errors.Is(err, databaseSql.ErrNoRows) {
@@ -111,7 +110,7 @@ func (d *PostgresDatabase) Exec(ctx context.Context, sql string, args ...any) (g
 	return tag, errors.WithStack(err)
 }
 
-func (d *PostgresDatabase) Query(ctx context.Context, sql string, args ...any) (gdh.Rows, error) {
+func (d *Postgres) Query(ctx context.Context, sql string, args ...any) (gdh.Rows, error) {
 	rows, err := d.pgx.Query(ctx, sql, args...)
 
 	if err != nil && !errors.Is(err, databaseSql.ErrNoRows) {
@@ -121,27 +120,18 @@ func (d *PostgresDatabase) Query(ctx context.Context, sql string, args ...any) (
 	return rows, errors.WithStack(err)
 }
 
-func (d *PostgresDatabase) GetNamedArgs(args any) any {
+func (d *Postgres) GetNamedArgs(args any) any {
 	return pgxcqr.NamedArgs(args.(map[string]any))
 }
 
-func (d *PostgresDatabase) GetPgx() PgXWrappedDatabase {
+func (d *Postgres) GetPgx() PgXWrappedDatabase {
 	return d.pgx
 }
 
-func (d *PostgresDatabase) WithPgx(pgx PgXWrappedDatabase) *PostgresDatabase {
-	return &PostgresDatabase{
-		pgx:       pgx,
-		pgxConfig: d.pgxConfig,
-		pgxConn:   d.pgxConn,
-		onError:   d.onError,
-	}
-}
-
-func (d *PostgresDatabase) GetPgxConfig() *pgxpool.Config {
+func (d *Postgres) GetPgxConfig() *pgxpool.Config {
 	return d.pgxConfig
 }
 
-func (d *PostgresDatabase) Destruct() {
+func (d *Postgres) Destruct() {
 	d.pgxConn.Close()
 }

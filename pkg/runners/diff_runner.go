@@ -52,7 +52,7 @@ func NewDiffRunner(opts DiffRunnerOptions) *DiffRunner {
 }
 
 func (r *DiffRunner) Run(ctx context.Context) error {
-	db := gormite_databases.NewPostgresDatabase(ctx, r.opts.Dsn)
+	db := gormite_databases.NewPostgres(ctx, r.opts.Dsn)
 
 	platform := postgres_platform.NewPostgreSQLPlatform()
 
