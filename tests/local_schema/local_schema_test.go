@@ -11,7 +11,7 @@ func TestIntrospectLocalSchema(t *testing.T) {
 	abstractPlatform := &platforms.AbstractPlatform{}
 	maxIdentifierLength := abstractPlatform.GetMaxIdentifierLength()
 
-	newSchema, err := local_schema.IntrospectLocalSchema("resources/gormite.yaml")
+	newSchema, err := local_schema.IntrospectLocalSchema("gormite.yaml")
 	if err != nil {
 		panic(errors.Wrap(err, "failed to introspect local schema"))
 	}
