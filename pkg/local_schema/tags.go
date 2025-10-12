@@ -4,7 +4,6 @@ import (
 	"github.com/KoNekoD/gormite/pkg/assets"
 	"github.com/KoNekoD/gormite/pkg/types"
 	"github.com/pkg/errors"
-	"go/ast"
 	"slices"
 	"strconv"
 )
@@ -26,9 +25,8 @@ const (
 	scaleTagName                     = "scale"
 )
 
-func (t *tableBag) parseColumnTags(fieldType *ast.Ident, objectsKeys []string) (*columnData, error) {
+func (t *tableBag) parseColumnTags(typeName string, objectsKeys []string) (*columnData, error) {
 	tags := t.currentFieldTags
-	typeName := fieldType.Name
 
 	colNameTag, _ := tags.Get(columnTagName)
 	columnName := colNameTag.Value()

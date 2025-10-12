@@ -60,7 +60,7 @@ func newTableBag(store *store, table *assets.Table) *tableBag {
 func (t *tableBag) colIdent(fieldType *ast.Ident, nillable bool) error {
 	objectsKeys := maps.Keys(t.store.objectsMap)
 
-	columnTagsData, err := t.parseColumnTags(fieldType, objectsKeys)
+	columnTagsData, err := t.parseColumnTags(fieldType.Name, objectsKeys)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse column tags")
 	}
@@ -101,7 +101,7 @@ func (t *tableBag) colSel(fType *ast.SelectorExpr, nillable bool) error {
 	selPackage := fType.X.(*ast.Ident).Name
 	selType := fType.Sel.Name
 
-	columnTagsData, err := t.parseColumnTags(fType.Sel, objectsKeys)
+	columnTagsData, err := t.parseColumnTags(selType, objectsKeys)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse column tags")
 	}
@@ -137,20 +137,7 @@ func (t *tableBag) colStar(fType *ast.StarExpr) error {
 func (t *tableBag) colArray(fieldType *ast.ArrayType) error {
 	objectsKeys := maps.Keys(t.store.objectsMap)
 
-	ident, ok := fieldType.Elt.(*ast.Ident)
-	if !ok {
-		return errors.Errorf("only literal array types are supported")
-	}
-
-	// TODO: Refactor for others literals support
-
-	allowedFieldTypes := []string{"string"}
-
-	if !slices.Contains(allowedFieldTypes, ident.Name) {
-		return errors.Errorf("slice type only allowed for %s", allowedFieldTypes)
-	}
-
-	columnTagsData, err := t.parseColumnTags(ident, objectsKeys)
+	columnTagsData, err := t.parseColumnTags("", objectsKeys)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse column tags")
 	}
