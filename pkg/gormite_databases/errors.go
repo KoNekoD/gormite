@@ -11,6 +11,10 @@ func (e *QueryError) Error() string {
 	return e.err.Error()
 }
 
+func (e *QueryError) Unwrap() error {
+	return e.err
+}
+
 type SqlError struct {
 	err  error
 	sql  string
@@ -30,4 +34,8 @@ func (e *SqlError) GetExtraData() map[string]any {
 		"sql":  e.sql,
 		"args": e.args,
 	}
+}
+
+func (e *SqlError) Unwrap() error {
+	return e.err
 }
