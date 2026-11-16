@@ -19,6 +19,8 @@ type CommandTag interface {
 type Rows interface {
 	Next() bool
 	Scan(dest ...any) error
+	Err() error
+	Close()
 }
 
 type QueryInterface interface {
@@ -86,6 +88,7 @@ func SelectExecLitSlice[T any](ctx context.Context, db Database, sql string, arg
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var rowValue T
@@ -95,6 +98,10 @@ func SelectExecLitSlice[T any](ctx context.Context, db Database, sql string, arg
 		}
 
 		v = append(v, rowValue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.WithStack(err)
 	}
 
 	return v, nil
